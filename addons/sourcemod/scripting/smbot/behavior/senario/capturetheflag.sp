@@ -41,15 +41,23 @@ static int Update(CTFMainAction action, SMBot actor, float interval)
 {
     CBaseEntity item = actor.GetItem();
     CCaptureFlag carriedflag = CCaptureFlag(item.index);
+    CCaptureFlag theirflag = CTFGameRules.GetFlagToCapture(actor.GetTeam());
+
+    if (GetURandomFloat() <= 0.20)
+    {
+        return action.SuspendFor(RoamAction());
+    }
 
     if (carriedflag.IsValidCaptureFlag())
     {
         return action.SuspendFor(DeliverEnemyFlag(), "Delivering enemy flag to my base!");
     }
-    else
+    else if(theirflag.IsValidCaptureFlag() && !theirflag.IsStolen())
     {
         return action.SuspendFor(FetchEnemyFlag(), "Fetching enemy flag!");
     }
+
+    return action.SuspendFor(RoamAction());
 
     //return action.Continue();
 }

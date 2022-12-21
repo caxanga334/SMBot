@@ -11,10 +11,20 @@ enum TFBotDifficulty
 
 enum SMBotPathType
 {
-    FASTEST_PATH = 0,
-    SAFEST_PATH,
+    FASTEST_PATH = 0, // Prefer the fastest path, ignoring danger
+    SAFEST_PATH, // Gets the fastest path while taking danger in consideration 
+    FLANK_PATH, // Fastest alternative paths
 
     MAX_SMBOT_PATH_TYPES
+}
+
+enum CanBuildObjects
+{
+    CB_Object_SentryGun,
+    CB_Object_Dispenser,
+    CB_Object_Teleporter,
+
+    CB_Max_Objects
 }
 
 // globals
@@ -26,6 +36,13 @@ SMBotPathType g_PathType[TF_MAXPLAYERS];
 TFClassType g_iDesiredClass[TF_MAXPLAYERS];
 float g_flIgnoreEnemiesTime[TF_MAXPLAYERS];
 int g_iVisionSearchLastIndex[TF_MAXPLAYERS];
+float g_flNextChangeClassTime[TF_MAXPLAYERS];
+Path g_hCurrentPath[TF_MAXPLAYERS];
+int g_hMySentryGun[TF_MAXPLAYERS];
+int g_hMyDispenser[TF_MAXPLAYERS];
+int g_hMyTeleEntrance[TF_MAXPLAYERS];
+int g_hMyTeleExit[TF_MAXPLAYERS];
+CNavArea g_HomeArea[TF_MAXPLAYERS];
 
 float g_flHoldButtonTime[TF_MAXPLAYERS][MAX_BUTTONS];
 bool g_bTapButton[TF_MAXPLAYERS][MAX_BUTTONS];
@@ -64,6 +81,28 @@ methodmap CTFPlayer < CBaseCombatCharacter
     public static bool IsPlayerEntity(int entIndex)
     {
         return entIndex > 0 && entIndex <= MaxClients;
+    }
+
+    public int GetHealth()
+    {
+        return GetClientHealth(this.index);
+    }
+
+    public float GetHealthPercent()
+    {
+        int health = GetClientHealth(this.index);
+        int maxhealth = TF2Util_GetEntityMaxHealth(this.index);
+        return float(health)/float(maxhealth);
+    }
+
+    public void GetEyePosition(float eye[3])
+    {
+        GetClientEyePosition(this.index, eye);
+    }
+
+    public void GetEyeAngles(float angles[3])
+    {
+        GetClientEyeAngles(this.index, angles);
     }
 
     public TFTeam GetTeam()
@@ -110,11 +149,14 @@ methodmap CTFPlayer < CBaseCombatCharacter
         TF2_SetPlayerClass(this.index, newClass);
     }
 
+    // Gets the current number of healers
     public int GetNumHealers()
     {
         return this.GetProp(Prop_Send, "m_nNumHealers");
     }
 
+    // Gets a healer index
+    // @param healer    Healer array index
     public int GetHealerOfIndex(int healer)
     {
         return TF2Util_GetPlayerHealer(this.index, healer);
@@ -160,12 +202,14 @@ methodmap CTFPlayer < CBaseCombatCharacter
         return this.IsInGame() && GetClientTeam(this.index) >= view_as<int>(TFTeam_Red);
     }
 
-    // Calls VScript CTFPlayer::IsFullyInvisible.
-    // @note Internaly, it calls CTFPlayerShared::GetPercentInvisible and returns true if equals to 1.0
-    // @return      true if the player is fully invisible
+    public float GetPercentInvisible()
+    {
+        return GetEntDataFloat(this.index, g_offset_percentinvisible);
+    }
+
     public bool IsFullyInvisible()
     {
-        return SDKCall(g_hvs_isfullyinvisible, this.index);
+        return this.GetPercentInvisible() >= 0.99;
     }
 
     // Checks if the player is in any condition that makes them invisible
@@ -328,16 +372,45 @@ methodmap SMBot < NextBotPlayer
         return g_difficulty[this.index];
     }
 
+    property float nextchangeclasstime
+    {
+        public get()
+        {
+            return g_flNextChangeClassTime[this.index];
+        }
+        public set(float value)
+        {
+            g_flNextChangeClassTime[this.index] = GetGameTime() + value;
+        }
+    }
+
     // To-do: implement
     public TFClassType SelectClassToPlay()
     {
+        if (this.nextchangeclasstime > GetGameTime())
+            return TFClass_Unknown;
+        
+        this.nextchangeclasstime = Math_GetRandomFloat(120.0, 360.0);
+
         if (GetURandomFloat() > 0.5)
         {
             return TFClass_Scout;
         }
-        else
+        else if (GetURandomFloat() > 0.5)
         {
             return TFClass_Soldier;
+        }
+        else if (GetURandomFloat() > 0.5)
+        {
+            return TFClass_Pyro;
+        }
+        else if (GetURandomFloat() > 0.5)
+        {
+            return TFClass_DemoMan;
+        }
+        else
+        {
+            return TFClass_Heavy;
         }
     }
 
@@ -346,8 +419,13 @@ methodmap SMBot < NextBotPlayer
         return g_iDesiredClass[this.index];
     }
 
+    // Sets the bot desired class.
+    // @param class     Desired class
     public void SetDesiredClass(TFClassType class)
     {
+        if (class == TFClass_Unknown)
+            return; // keep the current class
+
         g_iDesiredClass[this.index] = class;
     }
 
@@ -360,6 +438,10 @@ methodmap SMBot < NextBotPlayer
         }
     }
 
+    // Updates the bot client settings.
+    // @param autoreload        Enables TF2 auto reload.
+    // @param autoheal          Enables TF2 auto heal (Doesn't need to hold primary).
+    // @param autorezoom        Enables TF2 sniper rifle auto rezoom.
     public void UpdateSettings(bool autoreload, bool autoheal, bool autorezoom)
     {
         SetFakeClientConVar(this.index, "cl_autoreload", autoreload ? "1" : "0");
@@ -367,6 +449,159 @@ methodmap SMBot < NextBotPlayer
         SetFakeClientConVar(this.index, "tf_medigun_autoheal", autoheal ? "1" : "0");
 
         CTFGameRules.ClientSettingsChanged(this.index);
+    }
+
+    public void SetMySentryGun(int entity)
+    {
+        if (CObjectSentrygun.IsSentryGun(entity))
+        {
+            g_hMySentryGun[this.index] = EntIndexToEntRef(entity);
+        }
+    }
+
+    public CObjectSentrygun GetMySentryGun()
+    {
+        int entity = EntRefToEntIndex(g_hMySentryGun[this.index]);
+        return CObjectSentrygun(entity);
+    }
+
+    public void SetMyDispenser(int entity)
+    {
+        if (CObjectDispenser.IsDispenser(entity))
+        {
+            g_hMyDispenser[this.index] = EntIndexToEntRef(entity);
+        }
+    }
+
+    public CObjectDispenser GetMyDispenser()
+    {
+        int entity = EntRefToEntIndex(g_hMyDispenser[this.index])
+        return CObjectDispenser(entity);
+    }
+
+    // Sets the bot teleporter
+    // @param entity        Teleporter entity index
+    // @param isexit        Is the teleporter a teleporter exit
+    public void SetMyTeleporter(int entity, bool isexit)
+    {
+        if (CObjectTeleporter.IsTeleporter(entity))
+        {
+            if (isexit == true)
+            {
+                g_hMyTeleExit[this.index] = EntIndexToEntRef(entity);
+            }
+            else
+            {
+                g_hMyTeleEntrance[this.index] = EntIndexToEntRef(entity);
+            } 
+        }
+    }
+
+    public CObjectTeleporter GetMyTeleporter(bool isexit)
+    {
+        int entity = -1;
+
+        if (isexit == true)
+        {
+            entity = EntRefToEntIndex(g_hMyTeleExit[this.index])
+        }
+        else
+        {
+            entity = EntRefToEntIndex(g_hMyTeleEntrance[this.index])
+        }
+
+        return CObjectTeleporter(entity);
+    }
+
+    // Updates the bot buildings
+    public void UpdateMyBuildings()
+    {
+        if (!this.IsClass(TFClass_Engineer))
+        {
+            g_hMySentryGun[this.index] = -1;
+            g_hMyDispenser[this.index] = -1;
+            g_hMyTeleEntrance[this.index] = -1;
+            g_hMyTeleExit[this.index] = -1;
+            return;
+        }
+
+        int entity = -1;
+        while((entity = FindEntityByClassname(entity, "obj_sentrygun")) != -1)
+        {
+            CBaseObject baseobject = CBaseObject(entity);
+
+            if (baseobject.GetBuilder() == this.index)
+            {
+                this.SetMySentryGun(entity);
+                break;
+            }
+        }
+
+        entity = -1;
+        while((entity = FindEntityByClassname(entity, "obj_dispenser")) != -1)
+        {
+            CBaseObject baseobject = CBaseObject(entity);
+
+            if (baseobject.GetBuilder() == this.index)
+            {
+                this.SetMyDispenser(entity);
+                break;
+            }
+        }
+
+        entity = -1;
+        bool hasexit = false;
+        bool hasentrance = false;
+        while((entity = FindEntityByClassname(entity, "obj_teleporter")) != -1)
+        {
+            CBaseObject baseobject = CBaseObject(entity);
+
+            if (baseobject.GetBuilder() == this.index && baseobject.GetMode() == TFObjectMode_Entrance && !hasentrance)
+            {
+                this.SetMyTeleporter(entity, false);
+                hasentrance = true;
+            }
+            else if(baseobject.GetBuilder() == this.index && baseobject.GetMode() == TFObjectMode_Exit && !hasexit)
+            {
+                this.SetMyTeleporter(entity, true);
+                hasexit = true;
+            }
+
+            if (hasentrance && hasexit)
+            {
+                break;
+            }
+        }
+    }
+
+    // The nav area where the bot first spawned
+    property CNavArea homearea
+    {
+        public get()
+        {
+            return g_HomeArea[this.index];
+        }
+        public set(CNavArea value)
+        {
+            g_HomeArea[this.index] = value;
+        }
+    }
+
+    // Stores the bot current path via sourcemod globals
+    // @note Mostly used for debugging
+    public void SetCurrentPath(const Path path)
+    {
+        g_hCurrentPath[this.index] = path;
+    }
+
+    public Path GetCurrentPath()
+    {
+        return g_hCurrentPath[this.index];
+    }
+
+    public void DestroyPath()
+    {
+        g_hCurrentPath[this.index] = view_as<Path>(0);
     }
 
     public bool MyIsEnemy(int other)
@@ -408,6 +643,63 @@ methodmap SMBot < NextBotPlayer
         return false;
     }
 
+    // Checks if the bot has enough metal to build the given object type
+    // @param building        Object type
+    // @return              True if the bot has enough metal to build
+    public bool CanBuildObject(CanBuildObjects building)
+    {
+        switch(building)
+        {
+            case CB_Object_SentryGun:
+            {
+                return this.GetAmmoOfType(view_as<int>(TFAmmo_Metal)) >= 130;
+            }
+            case CB_Object_Dispenser:
+            {
+                return this.GetAmmoOfType(view_as<int>(TFAmmo_Metal)) >= 100;
+            }
+            case CB_Object_Teleporter:
+            {
+                return this.GetAmmoOfType(view_as<int>(TFAmmo_Metal)) >= 50;
+            }
+        }
+
+        return false;
+    }
+
+    // Collects visible teammates to heal
+    // @param patients      Array to store visible patients
+    // @param size          Patients array size
+    // @return              Number of visible patients
+    public int CollectHealTargets(int[] patients, int size)
+    {
+        int num_patients = 0;
+        INextBot bot = this.MyNextBotPointer();
+        IVision vision = bot.GetVisionInterface();
+
+        for(int client = 1; client <= MaxClients; client++)
+        {
+            CTFPlayer TFPlayer = CTFPlayer(client);
+            
+            if (!TFPlayer.IsPlaying()) // checks if client in in game and on either RED or BLU team
+                continue;
+
+            if (!TFPlayer.IsAlive())
+                continue;
+
+            if (TFPlayer.GetTeam() == this.GetTeam() && vision.IsLineOfSightClearToEntity(client))
+            {
+                if (num_patients < size)
+                {
+                    patients[num_patients] = client;
+                    num_patients++;
+                }
+            }
+        }
+
+        return num_patients;
+    }
+
     // This function handles the bot vision for detecting other players
     public void UpdateVisiblePlayers()
     {
@@ -429,36 +721,30 @@ methodmap SMBot < NextBotPlayer
 
             if (this.MyIsEnemy(TFPlayer.index))
             {
-                float bonePos[3], center[3], ignored[3];
+                float position[3];
 
-                TFPlayer.WorldSpaceCenter(center);
+                TFPlayer.WorldSpaceCenter(position);
 
-                if (vision.IsLineOfSightClear(center))
+                if (vision.IsLineOfSightClear(position))
                 {
                     vision.AddKnownEntity(TFPlayer.index);
                     continue;
                 }
 
-                int bone = TFPlayer.LookUpBone("bip_head");
-                if (bone != -1)
+                TFPlayer.GetEyePosition(position);
+
+                if (vision.IsLineOfSightClear(position))
                 {
-                    TFPlayer.GetBonePosition(bone, bonePos, ignored);
-                    if (vision.IsLineOfSightClear(bonePos))
-                    {
-                        vision.AddKnownEntity(TFPlayer.index);
-                        continue;
-                    }
+                    vision.AddKnownEntity(TFPlayer.index);
+                    continue;
                 }
 
-                bone = TFPlayer.LookUpBone("bip_foot_L");
-                if (bone != -1)
+                TFPlayer.GetAbsOrigin(position);
+
+                if (vision.IsLineOfSightClear(position))
                 {
-                    TFPlayer.GetBonePosition(bone, bonePos, ignored);
-                    if (vision.IsLineOfSightClear(bonePos))
-                    {
-                        vision.AddKnownEntity(TFPlayer.index);
-                        continue;
-                    }
+                    vision.AddKnownEntity(TFPlayer.index);
+                    continue;
                 }
             }
         }
@@ -758,7 +1044,34 @@ methodmap SMBot < NextBotPlayer
         if (ratio < 0.5)
             return true;
 
+        if (this.IsInCondition(TFCond_OnFire) || this.IsInCondition(TFCond_Bleeding))
+            return true;
+
         return false;
+    }
+
+    public int CollectKnownEntities(CKnownEntity[] knownlist, int size, int start = 1, int searchrange = 2048)
+    {
+        INextBot bot = this.MyNextBotPointer();
+        IVision vision = bot.GetVisionInterface();
+        CKnownEntity known = NULL_KNOWN_ENTITY;
+        int counter = 0;
+
+        for(int i = start; i < searchrange; i++)
+        {
+            known = vision.GetKnown(i);
+
+            if (counter >= size)
+                break;
+
+            if (known != NULL_KNOWN_ENTITY)
+            {
+                knownlist[counter] = known;
+                counter++;
+            }
+        }
+
+        return counter;
     }
 }
 
@@ -804,6 +1117,8 @@ Action Timer_OnSpawnPost(Handle timer, any data)
     {
         SMBot bot = SMBot(client);
         bot.SetDesiredClass(bot.SelectClassToPlay());
+        bot.UpdateLastKnownArea();
+        bot.homearea = bot.GetLastKnownArea();
 
         if (bot.GetClass() != bot.GetDesiredClass())
         {
@@ -822,13 +1137,13 @@ methodmap CClient
         return view_as<CClient>(index);
     }
 
-	property int index
-	{
-		public get()
-		{
-			return view_as<int>(this);
-		}
-	}
+    property int index
+    {
+        public get()
+        {
+            return view_as<int>(this);
+        }
+    }
 
     property bool debugging
     {

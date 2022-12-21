@@ -14,6 +14,8 @@ methodmap DeliverEnemyFlag < NextBotAction
         ActionFactory.SetCallback(NextBotActionCallbackType_Update, Update);
         ActionFactory.SetCallback(NextBotActionCallbackType_OnEnd, OnEnd);
         ActionFactory.SetEventCallback(EventResponderType_OnStuck, OnStuck);
+        ActionFactory.SetQueryCallback(ContextualQueryType_ShouldRetreat, ShouldRetreat);
+        ActionFactory.SetQueryCallback(ContextualQueryType_ShouldHurry, ShouldHurry);
     }
 
     public static NextBotActionFactory GetFactory()
@@ -87,6 +89,7 @@ static int OnStart(DeliverEnemyFlag action, SMBot actor, NextBotAction prevActio
     action.path = path;
     action.stuckcounter = 0;
     bot.SetCurrentPath(path);
+    actor.SetCurrentPath(path); // sets the bot path (SMBot variable)
 
     if (!path.IsValid())
     {
@@ -162,4 +165,14 @@ static int OnStuck(DeliverEnemyFlag action, SMBot actor)
     }
 
     return action.TryContinue(RESULT_TRY);
+}
+
+static QueryResultType ShouldRetreat(TacticalMonitorAction action, INextBot bot)
+{
+    return ANSWER_NO;
+}
+
+static QueryResultType ShouldHurry(TacticalMonitorAction action, INextBot bot)
+{
+    return ANSWER_YES;
 }

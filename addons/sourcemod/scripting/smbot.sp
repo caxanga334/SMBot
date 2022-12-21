@@ -9,7 +9,6 @@
 #include <cbasenpc>
 #include <cbasenpc/util>
 #include <cbasenpc/tf/nav>
-#include <vscript>
 #include <autoexecconfig>
 
 #include "smbot/sdktimers"
@@ -45,6 +44,7 @@ int g_iHaloSprite;
 #include "smbot/utils.sp"
 #include "smbot/gameevents.sp"
 #include "smbot/cvars.sp"
+#include "smbot/detours.sp"
 #include "smbot/sdkcalls.sp"
 #include "smbot/nodes.sp"
 #include "smbot/entities.sp"
@@ -71,6 +71,7 @@ public void OnPluginStart()
     RegAdminCmd("sm_smbot_node_dumpinfo", Cmd_nodedumpinfo, ADMFLAG_ROOT, "Dump information about a single node.");
 
     GameData gamedata = new GameData("smbot.games");
+    SetupDetours(gamedata);
     SetupSDKCalls(gamedata);
     delete gamedata;
 
@@ -87,11 +88,6 @@ public void OnPluginStart()
 
 public void OnAllPluginsLoaded()
 {
-    if (LibraryExists("vscript"))
-    {
-        SetupVScriptSDKCalls();
-    }
-
     LogMessage("SMBot version %s loaded!", PLUGIN_VERSION);
 }
 
@@ -110,6 +106,13 @@ void ResetGlobals(int index)
 
     g_bClientDebugging[index] = false;
     g_iVisionSearchLastIndex[index] = MaxClients + 1;
+    g_hCurrentPath[index] = view_as<Path>(0);
+    g_flNextChangeClassTime[index] = 0.0;
+    g_HomeArea[index] = NULL_AREA;
+    g_hMySentryGun[index] = -1;
+    g_hMyDispenser[index] = -1;
+    g_hMyTeleEntrance[index] = -1;
+    g_hMyTeleExit[index] = -1;
 }
 
 public void Precache()
@@ -216,6 +219,7 @@ void OnClientPostThink(int client)
     CClient botclient = CClient(client);
     CTFPlayer TFPlayer = CTFPlayer(client);
     int target = TFPlayer.GetObserverTarget();
+    SMBot smbot = SMBot(target);
 
     if (botclient.debugging && botclient.debughudtimer <= GetGameTime() && SMBot.IsSMBot(target) && TheNodes.GetEditor() != client)
     {
@@ -224,6 +228,35 @@ void OnClientPostThink(int client)
         ShowSyncHudText(client, g_hDebugHUD1, "Debugging %N", target);
         SetHudTextParams(0.1, 0.25, 1.0, 255, 255, 0, 255);
         ShowSyncHudText(client, g_hDebugHUD2, "%s", g_szBehaviorDebug[target]);
+
+        Path path = smbot.GetCurrentPath();
+
+        if (path != view_as<Path>(0) && smbot.IsAlive())
+        {
+            Segment first = path.FirstSegment();
+            Segment next = NULL_PATH_SEGMENT;
+
+            if (first != NULL_PATH_SEGMENT)
+            {
+                next = path.NextSegment(first);
+                float start[3], end[3];
+                int colors[4];
+
+                while(first != NULL_PATH_SEGMENT && next != NULL_PATH_SEGMENT)
+                {
+                    path = smbot.GetCurrentPath();
+                    if (path == view_as<Path>(0))
+                        break;
+
+                    first.GetPos(start);
+                    next.GetPos(end);
+                    UTIL_PathDrawColors(first.type, colors);
+                    UTIL_DrawLaser(client, start, end, colors, 1.5);
+                    first = next;
+                    next = path.NextSegment(first);
+                }
+            }
+        }
     }
     else if (TheNodes.GetEditor() == client)
     {
@@ -328,20 +361,6 @@ Action Cmd_setdebugtarget(int client, int args)
     return Plugin_Handled;
 }
 
-bool TestEnumerator(int entity)
-{
-    if (IsValidEntity(entity))
-    {
-        char classname[64];
-        GetEntityClassname(entity, classname, sizeof(classname));
-        PrintToChatAll("TR_EnumerateEntitiesSphere -- (%s)#%i", classname, entity);
-        return true;
-    }
-
-    PrintToChatAll("TR_EnumerateEntitiesSphere -- (INVALID)#%i", entity);
-    return true;
-}
-
 Action Cmd_test(int client, int args)
 {
     CClient botclient = CClient(client);
@@ -352,23 +371,10 @@ Action Cmd_test(int client, int args)
         return Plugin_Handled;
     }
 
-    float origin[3];
-    GetClientAbsOrigin(client, origin);
+    int offset = FindOffset("CTFPlayer", "m_flInvisChangeCompleteTime", -8);
+    float vis = GetEntDataFloat(client, offset);
 
-    TR_EnumerateEntitiesSphere(origin, 512.0, PARTITION_NON_STATIC_EDICTS|PARTITION_STATIC_PROPS, TestEnumerator);
-
-    int entity = -1;
-    while((entity = CGlobalEntityList.FindEntityInSphere(entity, origin, 512.0)) != -1)
-    {
-        if (IsValidEntity(entity))
-        {
-            char classname[64];
-            GetEntityClassname(entity, classname, sizeof(classname));
-            PrintToChatAll("FindEntityInSphere -- (%s)#%i", classname, entity);
-        }
-
-        PrintToChatAll("FindEntityInSphere -- (INVALID)#%i", entity);
-    }
+    PrintToChat(client, "Percent Invisible: %.1f", vis);
     
     return Plugin_Handled;
 }
@@ -770,10 +776,13 @@ Action Cmd_nodedumpinfo(int client, int args)
 void InitBehavior()
 {
     SMBotMainAction.Initialize();
+    SMBotDeadAction.Initialize();
     TacticalMonitorAction.Initialize();
     SenarioMonitorAction.Initialize();
     RoamAction.Initialize();
     CTFMainAction.Initialize();
     FetchEnemyFlag.Initialize();
     DeliverEnemyFlag.Initialize();
+    FindHealthAction.Initialize();
+    FindAmmoAction.Initialize();
 }

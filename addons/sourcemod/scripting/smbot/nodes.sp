@@ -19,6 +19,10 @@ enum NodeHint
     NodeHint_TeleporterEntrance,        // Engineers should build a teleporter entrance here
     NodeHint_Deathmatch,                // Deathmatch hint. Used by free roaming bots
     NodeHint_Approuch,                  // Location where bots will expect enemies to appear from
+    NodeHint_Exposed,                   // The area around this node is exposed/open, bots prefering a safer path will avoid
+    NodeHint_Flank,                     // Marks nearby area as an alternative route to be used by flanking bots
+    NodeHint_Avoid,                     // Marks nearby area to be avoided by bots
+    NodeHint_Prefer,                    // Marks nearby area to be preferred by bots
 
     NodeHint_MaxHintType                // Maximum number of hints available
 }
@@ -31,7 +35,11 @@ int g_iNodeHintColor[view_as<int>(NodeHint_MaxHintType)][4] = {
     { 255, 165, 0, 255 }, // Tele Exit 
     { 165, 42, 42, 255 }, // Tele Entrance 
     { 255, 105, 180, 255 }, // Deathmatch
-    { 255, 0, 255, 255 } // Approuch
+    { 255, 0, 255, 255 }, // Approuch
+    { 200, 100, 100, 255 }, // Exposed
+    { 60, 220, 190, 255 }, // Flank
+    { 200, 0, 160, 255 }, // Avoid
+    { 150, 255, 0, 255 } // Prefer
 }
 
 char g_szNodeHintName[view_as<int>(NodeHint_MaxHintType)][16] = {
@@ -42,7 +50,11 @@ char g_szNodeHintName[view_as<int>(NodeHint_MaxHintType)][16] = {
     "Tele Exit",
     "Tele Entrance",
     "Deathmatch",
-    "Approuch"
+    "Approuch",
+    "Exposed",
+    "Flank",
+    "Avoid",
+    "Prefer"
 }
 
 bool g_bNodeUsed[MAX_NODES]; // True if the node is used

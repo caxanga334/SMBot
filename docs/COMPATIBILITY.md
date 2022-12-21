@@ -25,6 +25,7 @@ None at the moment.
 # Supported Classes
 
 Includes basic AI behavior for scout, soldier, pyro, demoman and heavy.
+
 Engineer, medic, sniper and spy is currently not supported.
 
 # Legend (Game Modes)

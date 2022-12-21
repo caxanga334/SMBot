@@ -8,11 +8,7 @@ Handle g_hclientsettingsupdated;
 Handle g_hfindentitybyname;
 Handle g_hfindentityinsphere;
 int g_offset_hmatchingteleporter;
-
-// vscript functions sdk calls
-
-Handle g_hvs_isfullyinvisible;
-Handle g_hvs_ismeleeweapon;
+int g_offset_percentinvisible;
 
 /**
  * Gets the offset
@@ -130,37 +126,11 @@ void SetupSDKCalls(GameData gamedata)
     g_offset_hmatchingteleporter = FindOffset("CObjectTeleporter", "m_bMatchBuilding", offset);
     LogMessage("Calculated offset %i for CObjectTeleporter::m_hMatchingTeleporter", g_offset_hmatchingteleporter);
 
+    g_offset_percentinvisible = FindOffset("CTFPlayer", "m_flInvisChangeCompleteTime", -8);
+    LogMessage("CTFPlayer percent invisible offset %i", g_offset_percentinvisible);
+
     if (fail)
         SetFailState("SetupSDKCalls reports failure!");
-}
-
-public void SetupVScriptSDKCalls()
-{
-    bool fail = false;
-    Address addr = Address_Null;
-
-    addr = VScript_GetFunctionAddress("CTFPlayer", "IsFullyInvisible");
-    StartPrepSDKCall(SDKCall_Player);
-    PrepSDKCall_SetAddress(addr);
-    PrepSDKCall_SetReturnInfo(SDKType_Bool, SDKPass_ByValue);
-    if ((g_hvs_isfullyinvisible = EndPrepSDKCall()) == null)
-    {
-        LogError("Failed to setup SDKCall for VScript function CTFPlayer::GetActiveWeapon");
-        fail = true;
-    }
-
-    addr = VScript_GetFunctionAddress("CBaseCombatWeapon", "IsMeleeWeapon");
-    StartPrepSDKCall(SDKCall_Entity);
-    PrepSDKCall_SetAddress(addr);
-    PrepSDKCall_SetReturnInfo(SDKType_Bool, SDKPass_ByValue);
-    if ((g_hvs_ismeleeweapon = EndPrepSDKCall()) == null)
-    {
-        LogError("Failed to setup SDKCall for VScript function CBaseCombatWeapon::IsMeleeWeapon");
-        fail = true;
-    }
-
-    if (fail)
-        SetFailState("SetupVScriptSDKCalls reports failure!");
 }
 
 /**

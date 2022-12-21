@@ -231,3 +231,43 @@ stock float UTIL_Approach(float target, float value, float speed)
 
     return value;
 }
+
+void UTIL_PathDrawColors(const SegmentType type, int colors[4])
+{
+    switch(type)
+    {
+        case DROP_DOWN:
+        {
+            colors = { 255, 0, 0, 255 };
+        }
+        case JUMP_OVER_GAP:
+        {
+            colors = { 0, 255, 0, 255 };
+        }
+        case CLIMB_UP:
+        {
+            colors = { 0, 0, 255, 255 };
+        }
+        default:
+        {
+            colors = { 255, 255, 255, 255 };
+        }
+    }
+}
+
+void UTIL_TF2ClassTypeToName(const TFClassType class, char[] buffer, int size)
+{
+    switch(class)
+    {
+        case TFClass_Scout: strcopy(buffer, size, "scout");
+        case TFClass_Soldier: strcopy(buffer, size, "soldier");
+        case TFClass_Pyro: strcopy(buffer, size, "pyro");
+        case TFClass_DemoMan: strcopy(buffer, size, "demoman");
+        case TFClass_Heavy: strcopy(buffer, size, "heavyweapons");
+        case TFClass_Engineer: strcopy(buffer, size, "engineer");
+        case TFClass_Medic: strcopy(buffer, size, "medic");
+        case TFClass_Sniper: strcopy(buffer, size, "sniper");
+        case TFClass_Spy: strcopy(buffer, size, "spy");
+        default: strcopy(buffer, size, "soldier");
+    }
+}

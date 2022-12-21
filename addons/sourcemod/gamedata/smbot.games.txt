@@ -46,6 +46,13 @@
                 "windows"   "\x55\x8B\xEC\x83\xEC\x0C\x53\x56\x57\x8B\xF9\x8B\x4D\x2A"
                 "linux"     "@_ZN17CGlobalEntityList18FindEntityInSphereEP11CBaseEntityRK6VectorfP17IEntityFindFilter"
             }
+            // Unique string xref "TFBot unable to get data for desired class, defaulting to 'auto'\n"
+            "CTFBot::GetNextSpawnClassname"
+            {
+                "library"   "server"
+                "windows"   "\x55\x8B\xEC\x83\xEC\x18\xF7\x05\x2A\x2A\x2A\x2A\x00\x10\x00\x00"
+                "linux"     "@_ZNK6CTFBot21GetNextSpawnClassnameEv"
+            }
         }
         "Offsets"
         {
@@ -70,6 +77,16 @@
                 "windows"   "4"
                 "linux"     "4"
             }
+        }
+        "Functions"
+        {
+			"CTFBot::GetNextSpawnClassname"
+			{
+				"signature" "CTFBot::GetNextSpawnClassname"
+				"callconv"	"thiscall"
+				"return"	"charptr"
+				"this"		"entity"
+			}
         }
     }
 }

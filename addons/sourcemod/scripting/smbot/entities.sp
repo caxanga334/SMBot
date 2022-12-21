@@ -683,7 +683,7 @@ methodmap CTFWeaponBase < CBaseAnimating
 
     public bool IsMeleeWeapon()
     {
-        return SDKCall(g_hvs_ismeleeweapon, this.index);
+        return TF2Util_GetWeaponSlot(this.index) == TFWeaponSlot_Melee;
     }
 
     public static bool WeaponID_IsSniperRifle(int id)
@@ -717,5 +717,28 @@ methodmap CItem < CBaseAnimating
     public bool CanBePicked()
     {
         return !this.HasEffect(EF_NODRAW);
+    }
+}
+
+methodmap CFuncRegenerate < CBaseEntity
+{
+    public CFuncRegenerate(int entity)
+    {
+        return view_as<CFuncRegenerate>(entity);
+    }
+
+    public TFTeam GetTeam()
+    {
+        return view_as<TFTeam>(this.GetProp(Prop_Send, "m_iTeamNum"));
+    }
+
+    public bool CanBeUsedByTeam(TFTeam team)
+    {
+        return this.GetTeam() == TFTeam_Unassigned || this.GetTeam() == team;
+    }
+
+    public bool IsDisabled()
+    {
+        return this.GetProp(Prop_Data, "m_bDisabled") == 1;
     }
 }

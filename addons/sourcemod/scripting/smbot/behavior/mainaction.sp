@@ -1,6 +1,9 @@
 #include "tacticalmonitor.sp"
 #include "senariomonitor.sp"
 #include "roam.sp"
+#include "findhealth.sp"
+#include "findammo.sp"
+#include "deadaction.sp"
 #include "senario/capturetheflag.sp"
 
 static NextBotActionFactory ActionFactory;
@@ -21,6 +24,8 @@ methodmap SMBotMainAction < NextBotAction
         ActionFactory.SetEventCallback(EventResponderType_OnTerritoryCaptured, OnTerritoryCaptured);
         ActionFactory.SetEventCallback(EventResponderType_OnTerritoryLost, OnTerritoryLost);
         ActionFactory.SetEventCallback(EventResponderType_OnCommandString, OnCommandString);
+        ActionFactory.SetEventCallback(EventResponderType_OnInjured, OnInjured);
+        ActionFactory.SetEventCallback(EventResponderType_OnKilled, OnKilled);
         ActionFactory.SetQueryCallback(ContextualQueryType_SelectTargetPoint, SelectTargetPoint);
         ActionFactory.SetQueryCallback(ContextualQueryType_SelectMoreDangerousThreat, SelectMoreDangerousThreat);
     }
@@ -58,34 +63,65 @@ static int Update(SMBotMainAction action, SMBot actor, float interval)
     return action.Continue();
 }
 
-static int OnActorEmoted(NextBotAction action, SMBot actor, CBaseCombatCharacter emoter, int emote)
+static int OnActorEmoted(SMBotMainAction action, SMBot actor, CBaseCombatCharacter emoter, int emote)
 {
     return action.TryContinue();
 }
 
-static int OnWeaponFired(NextBotAction action, SMBot actor, CBaseCombatCharacter whoFired, CBaseEntity weapon)
+static int OnWeaponFired(SMBotMainAction action, SMBot actor, CBaseCombatCharacter whoFired, CBaseEntity weapon)
 {
     return action.TryContinue();   
 }
 
-static int OnTerritoryContested(NextBotAction action, int actor, int victim)
+static int OnTerritoryContested(SMBotMainAction action, int actor, int victim)
 {
     return action.TryContinue();   
 }
 
-static int OnTerritoryCaptured(NextBotAction action, int actor, int victim)
+static int OnTerritoryCaptured(SMBotMainAction action, int actor, int victim)
 {
     return action.TryContinue();   
 }
 
-static int OnTerritoryLost(NextBotAction action, int actor, int victim)
+static int OnTerritoryLost(SMBotMainAction action, int actor, int victim)
 {
     return action.TryContinue();   
 }
 
-static int OnCommandString(NextBotAction action, SMBot actor, const char[] command)
+static int OnCommandString(SMBotMainAction action, SMBot actor, const char[] command)
 {
     return action.TryContinue();
+}
+
+static int OnInjured(SMBotMainAction action, SMBot actor, CBaseEntity attacker, CBaseEntity inflictor, float damage, int damagetype, CBaseEntity weapon, const float damageForce[3], const float damagePosition[3], int damagecustom)
+{
+    INextBot bot = actor.MyNextBotPointer();
+    IVision vision = bot.GetVisionInterface();
+    PlayerBody body = actor.GetPlayerBody();
+
+    if (CTFPlayer.IsPlayerEntity(attacker.index) || CObjectSentrygun.IsSentryGun(attacker.index))
+    {
+        float origin[3];
+        vision.AddKnownEntity(attacker.index);
+        attacker.WorldSpaceCenter(origin);
+
+        if (vision.IsLineOfSightClear(origin))
+        {
+            body.AimTowards(origin, IMPORTANT, 0.500, "Looking at my attacker");
+        } 
+    }
+
+    if (CTFPlayer.IsPlayerEntity(inflictor.index) || CObjectSentrygun.IsSentryGun(attacker.index))
+    {
+        vision.AddKnownEntity(inflictor.index);
+    }
+
+    return action.TryContinue();
+}
+
+static int OnKilled(SMBotMainAction action, SMBot actor, CBaseEntity attacker, CBaseEntity inflictor, float damage, int damagetype, CBaseEntity weapon, const float damageForce[3], const float damagePosition[3], int damagecustom)
+{
+    return action.TryChangeTo(SMBotDeadAction(), RESULT_CRITICAL, "I am dead!");
 }
 
 /**

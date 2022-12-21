@@ -89,17 +89,20 @@ static int OnStart(RoamAction action, SMBot actor, NextBotAction prevAction)
     if (!path.ComputeToPos(bot, center, .includeGoalIfPathFails = false))
     {
         path.Destroy();
+        actor.DestroyPath();
         return action.Done("Failed to get path to my destination!");
     }
 
     action.path = path;
     action.stuckcounter = 0;
     bot.SetCurrentPath(path);
+    actor.SetCurrentPath(path);
 
     if (!path.IsValid())
     {
         bot.NotifyPathDestruction(path);
         path.Destroy();
+        actor.DestroyPath();
         action.path = view_as<PathFollower>(0);
         return action.Done("My path is invalid!");
     }
@@ -112,6 +115,7 @@ static int Update(RoamAction action, SMBot actor, float interval)
     INextBot bot = actor.MyNextBotPointer();
     ILocomotion locomotion = bot.GetLocomotionInterface();
     PathFollower path = action.path;
+    actor.SetCurrentPath(path);
     float goal[3];
     float endpos[3];
     path.GetEndPosition(endpos);
@@ -142,6 +146,7 @@ static void OnEnd(RoamAction action, SMBot actor, NextBotAction nextAction)
     if (path)
     {
         bot.NotifyPathDestruction(path);
+        actor.DestroyPath();
         path.Destroy();
     }
 }

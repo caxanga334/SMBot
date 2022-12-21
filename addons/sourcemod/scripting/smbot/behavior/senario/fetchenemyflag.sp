@@ -12,6 +12,7 @@ methodmap FetchEnemyFlag < NextBotAction
         ActionFactory.SetCallback(NextBotActionCallbackType_OnStart, FetchEnemyFlagOnStart);
         ActionFactory.SetCallback(NextBotActionCallbackType_OnResume, FetchEnemyFlagOnResume);
         ActionFactory.SetCallback(NextBotActionCallbackType_Update, FetchEnemyFlagUpdate);
+        ActionFactory.SetQueryCallback(ContextualQueryType_ShouldRetreat, FetchEnemyFlagShouldRetreat);
     }
 
     public static NextBotActionFactory GetFactory()
@@ -62,11 +63,13 @@ static int FetchEnemyFlagOnStart(FetchEnemyFlag action, SMBot actor, NextBotActi
     action.SetData("m_PathFollower", view_as<int>(path));
     flag.GetPosition(goal);
     path.ComputeToPos(bot, goal, .includeGoalIfPathFails = false);
-    bot.SetCurrentPath(path);
+    bot.SetCurrentPath(path); // sets the bot path (NextBot internal)
+    actor.SetCurrentPath(path); // sets the bot path (SMBot variable)
     
     if (!path.IsValid())
     {
         bot.NotifyPathDestruction(path);
+        actor.DestroyPath();
         path.Destroy();
         action.SetData("m_PathFollower", 0);
         return action.ChangeTo(RoamAction(), "My path is invalid!");
@@ -95,6 +98,11 @@ static int FetchEnemyFlagUpdate(FetchEnemyFlag action, SMBot actor, float interv
         return action.Done("Target flag is invalid!");
     }
 
+    if (flag.IsStolen())
+    {
+        return action.Done("Someone took the flag.");
+    }
+
     if (path.GetAge() > 5.0)
     {
         flag.GetPosition(goal);
@@ -107,10 +115,23 @@ static int FetchEnemyFlagUpdate(FetchEnemyFlag action, SMBot actor, float interv
     if (!path.IsValid())
     {
         bot.NotifyPathDestruction(path);
+        actor.DestroyPath();
         path.Destroy();
         action.SetData("m_PathFollower", 0);
         return action.ChangeTo(RoamAction(), "My path is invalid!");
     }
 
     return action.Continue();
+}
+
+static QueryResultType FetchEnemyFlagShouldRetreat(TacticalMonitorAction action, INextBot bot)
+{
+    SMBot smbot = SMBot(bot.GetEntity());
+
+    if (smbot.IsHealthLow())
+    {
+        return ANSWER_YES;
+    }
+
+    return ANSWER_NO;
 }
