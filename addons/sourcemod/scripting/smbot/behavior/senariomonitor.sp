@@ -1,3 +1,5 @@
+#include "medic/medicmain.sp"
+
 static NextBotActionFactory ActionFactory;
 
 methodmap SenarioMonitorAction < NextBotAction
@@ -32,7 +34,7 @@ static NextBotAction InitialContainedAction(SenarioMonitorAction action, SMBot a
     }
     else if (actor.IsClass(TFClass_Medic))
     {
-        return NULL_ACTION; // To-do: Medic
+        return MedicMainAction();
     }
     else if (actor.IsClass(TFClass_Sniper))
     {

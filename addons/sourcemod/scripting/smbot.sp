@@ -19,7 +19,7 @@
 #define PLUGIN_VERSION "0.0.1-alpha"
 #define MAX_CONTROL_POINTS 8
 #define NULL_ENTITY 0 // passes a NULL entity for SDK calls
-#define TF_MAXPLAYERS 36
+#define TF_MAXPLAYERS 102
 #define MAX_EDICTS 2048
 #define PITCH 0
 #define YAW 1
@@ -40,6 +40,8 @@ Handle g_hDebugHUD2;
 int g_iDebugBotTarget;
 int g_iLaserSprite;
 int g_iHaloSprite;
+bool g_bSpawningSMBot; // when true, enable our detour on CTFPlayer::CreatePlayer
+float g_flSpawnBotDelay;
 
 #include "smbot/utils.sp"
 #include "smbot/gameevents.sp"
@@ -56,7 +58,9 @@ int g_iHaloSprite;
 public void OnPluginStart()
 {
     SMBot.Initialize();
+    g_bSpawningSMBot = false;
 
+    RegAdminCmd("sm_smbot_add_bot", Cmd_AddBot, ADMFLAG_ROOT, "Adds a new bot to the game.");
     RegAdminCmd("sm_smbot_toggle_debug", Cmd_toggledebug, ADMFLAG_ROOT, "Toggles bot debugging information.");
     RegAdminCmd("sm_smbot_set_debug_target", Cmd_setdebugtarget, ADMFLAG_ROOT, "Sets the bot to debug.");
     RegAdminCmd("sm_smbot_test", Cmd_test, ADMFLAG_ROOT, "Generic feature test command.");
@@ -100,8 +104,7 @@ void ResetGlobals(int index)
     g_flIgnoreEnemiesTime[index] = -1.0;
     for (int bt = 0; bt < view_as<int>(MAX_BUTTONS); bt++)
     {
-        g_bTapButton[index][bt] = false;
-        g_flHoldButtonTime[index][bt] = -1.0;
+        g_ButtonTimers[index][bt].Invalidate();
     }
 
     g_bClientDebugging[index] = false;
@@ -109,6 +112,7 @@ void ResetGlobals(int index)
     g_hCurrentPath[index] = view_as<Path>(0);
     g_flNextChangeClassTime[index] = 0.0;
     g_HomeArea[index] = NULL_AREA;
+    g_iCurrentUsedNode[index] = INVALID_NODE_ID;
     g_hMySentryGun[index] = -1;
     g_hMyDispenser[index] = -1;
     g_hMyTeleEntrance[index] = -1;
@@ -133,6 +137,8 @@ public void OnMapStart()
 
     TheNodes.ClearMapData();
     TheNodes.LoadNodes();
+
+    g_flSpawnBotDelay = 0.0;
 }
 
 public void OnClientPutInServer(int client)
@@ -175,7 +181,6 @@ public Action OnPlayerRunCmd(int client, int& buttons, int& impulse, float vel[3
 
     SMBot bot = SMBot(client);
     PlayerBody body = bot.GetPlayerBody();
-    float now = GetGameTime();
     bool changed = false;
 
     if (!bot.IsPlaying())
@@ -186,7 +191,7 @@ public Action OnPlayerRunCmd(int client, int& buttons, int& impulse, float vel[3
         if (body.IsLooking())
         {
             body.MyReset();
-            bot.ClearButtons();
+            bot.ReleaseAllButtons();
         }
 
         return Plugin_Continue;
@@ -198,15 +203,7 @@ public Action OnPlayerRunCmd(int client, int& buttons, int& impulse, float vel[3
         changed = true;
     }
 
-    for (int bt = 0; bt < view_as<int>(MAX_BUTTONS); bt++)
-    {
-        if (g_flHoldButtonTime[client][bt] >= now || g_bTapButton[client][bt] == true)
-        {
-            changed = true;
-            buttons |= (1 << bt);
-            g_bTapButton[client][bt] = false;
-        }
-    }
+    bot.ProcessButtons(buttons, changed);
 
     return changed ? Plugin_Changed : Plugin_Continue;
 }
@@ -248,8 +245,8 @@ void OnClientPostThink(int client)
                     if (path == view_as<Path>(0))
                         break;
 
-                    first.GetPos(start);
-                    next.GetPos(end);
+                    first.GetPosition(start);
+                    next.GetPosition(end);
                     UTIL_PathDrawColors(first.type, colors);
                     UTIL_DrawLaser(client, start, end, colors, 1.5);
                     first = next;
@@ -297,6 +294,39 @@ void OnClientPostThink(int client)
 }
 
 /* COMMANDS */
+
+Action Cmd_AddBot(int client, int args)
+{
+    if (g_flSpawnBotDelay >= GetGameTime())
+    {
+        ReplyToCommand(client, "SMBot: Add bot is in cooldown.");
+        return Plugin_Handled;
+    }
+
+    if (g_bSpawningSMBot == true)
+    {
+        ReplyToCommand(client, "SMBot: Add bot is in cooldown.");
+        return Plugin_Handled;
+    }
+
+    g_bSpawningSMBot = true;
+    g_flSpawnBotDelay = GetGameTime() + 1.0;
+    RequestFrame(Frame_AddBot);
+
+    return Plugin_Handled;
+}
+
+void Frame_AddBot()
+{
+    SMBot.AllocateSMBotPlayer();
+    CreateTimer(0.5, Timer_AddBot, _, TIMER_FLAG_NO_MAPCHANGE);
+}
+
+Action Timer_AddBot(Handle timer)
+{
+    g_bSpawningSMBot = false;
+    return Plugin_Stop;
+}
 
 Action Cmd_toggledebug(int client, int args)
 {
@@ -785,4 +815,5 @@ void InitBehavior()
     DeliverEnemyFlag.Initialize();
     FindHealthAction.Initialize();
     FindAmmoAction.Initialize();
+    MedicMainAction.Initialize();
 }

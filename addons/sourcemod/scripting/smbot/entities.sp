@@ -692,6 +692,24 @@ methodmap CTFWeaponBase < CBaseAnimating
     }
 }
 
+methodmap CWeaponMedigun < CTFWeaponBase
+{
+    public CWeaponMedigun(int entity)
+    {
+        return view_as<CWeaponMedigun>(entity);
+    }
+
+    public static bool IsMedigun(int entity)
+    {
+        return HasEntProp(entity, Prop_Send, "m_hHealingTarget");
+    }
+
+    public float GetUberChargePercent()
+    {
+        return this.GetPropFloat(Prop_Send, "m_flChargeLevel");
+    }
+}
+
 methodmap CItem < CBaseAnimating
 {
     public CItem(int entity)

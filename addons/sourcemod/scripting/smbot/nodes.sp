@@ -2,29 +2,30 @@
  * SMBot Nodes
  */
 
-#define NODE_VERSION 1          // Node file version
-#define MAX_NODES 1024          // Maximum nodes allowed
-#define INVALID_NODE_ID -1      // Invalid Node
-#define NODE_HEIGHT 72          // Node height for drawing
-#define SAVE_MAX_EDITORS 3      // Maximum number of editor names to be saved
+#define NODE_VERSION 1          // Node file version.
+#define MAX_NODES 1024          // Maximum nodes allowed.
+#define INVALID_NODE_ID -1      // Invalid Node.
+#define NODE_HEIGHT 72          // Node height for drawing.
+#define SAVE_MAX_EDITORS 3      // Maximum number of editor names to be saved.
 
 enum NodeHint
 {
-    NodeHint_Unknown = -1,              // Unknown hint type
-    NodeHint_None = 0,                  // No hint
-    NodeHint_Sniper,                    // Sniper aiming spot
-    NodeHint_SentryGun,                 // Engineers should build a sentry gun here
-    NodeHint_Dispenser,                 // Engineers should build a dispenser here
-    NodeHint_TeleporterExit,            // Engineers should build a teleporter exit here
-    NodeHint_TeleporterEntrance,        // Engineers should build a teleporter entrance here
-    NodeHint_Deathmatch,                // Deathmatch hint. Used by free roaming bots
-    NodeHint_Approuch,                  // Location where bots will expect enemies to appear from
-    NodeHint_Exposed,                   // The area around this node is exposed/open, bots prefering a safer path will avoid
-    NodeHint_Flank,                     // Marks nearby area as an alternative route to be used by flanking bots
-    NodeHint_Avoid,                     // Marks nearby area to be avoided by bots
-    NodeHint_Prefer,                    // Marks nearby area to be preferred by bots
+    NodeHint_DontCare = -2,             // Don't Care. Used when searching nodes.
+    NodeHint_Unknown = -1,              // Unknown hint type.
+    NodeHint_None = 0,                  // No hint.
+    NodeHint_Sniper,                    // Sniper aiming spot.
+    NodeHint_SentryGun,                 // Engineers should build a sentry gun here.
+    NodeHint_Dispenser,                 // Engineers should build a dispenser here.
+    NodeHint_TeleporterExit,            // Engineers should build a teleporter exit here.
+    NodeHint_TeleporterEntrance,        // Engineers should build a teleporter entrance here.
+    NodeHint_Deathmatch,                // Deathmatch hint. Used by free roaming bots.
+    NodeHint_Approuch,                  // Location where bots will expect enemies to appear from.
+    NodeHint_Exposed,                   // The area around this node is exposed/open, bots prefering a safer path will avoid.
+    NodeHint_Flank,                     // Marks nearby area as an alternative route to be used by flanking bots.
+    NodeHint_Avoid,                     // Marks nearby area to be avoided by bots.
+    NodeHint_Prefer,                    // Marks nearby area to be preferred by bots.
 
-    NodeHint_MaxHintType                // Maximum number of hints available
+    NodeHint_MaxHintType                // Maximum number of hints available.
 }
 
 int g_iNodeHintColor[view_as<int>(NodeHint_MaxHintType)][4] = {
@@ -58,6 +59,7 @@ char g_szNodeHintName[view_as<int>(NodeHint_MaxHintType)][16] = {
 }
 
 bool g_bNodeUsed[MAX_NODES]; // True if the node is used
+bool g_bNodeTaken[MAX_NODES]; // True if the node is taken by a bot
 int g_iNodeTeam[MAX_NODES]; // Node team
 int g_iNodeHint[MAX_NODES]; // Node hint type
 float g_NodeOrigin[MAX_NODES][3]; // Node origin vector
@@ -100,6 +102,7 @@ methodmap CNode
     public void Register()
     {
         g_bNodeUsed[this.index] = true;
+        g_bNodeTaken[this.index] = false;
     }
 
     // Destroys the node, removing it
@@ -188,11 +191,24 @@ methodmap CNode
 
     // Checks if the node is free
     //
-    // @note A free node is an unused node
+    // @note A free node is a node that hasn't been registered and is invalid for usage.
     // @return      true if the node is free
     public bool IsFree()
     {
         return g_bNodeUsed[this.index] == false;
+    }
+
+    public bool IsAvailable()
+    {
+        return g_bNodeTaken[this.index] == false;
+    }
+
+    // Marks the node as available/unavailable.
+    // @note This is to prevent multiple bots from using the same node at the same time
+    // @param reserved      Is the node reserved? If true, bots won't be able to use it until it becomes unreserved
+    public void ChangeAvailableStatus(bool reserved = false)
+    {
+        g_bNodeTaken[this.index] = reserved;
     }
 
     public bool ForTeam(TFTeam team)
@@ -230,6 +246,11 @@ methodmap CNode
             g_iNodeHint[this.index] = view_as<int>(value);
         }
     }
+
+    public bool IsOfType(NodeHint type)
+    {
+        return this.hint == type;
+    }
 }
 
 methodmap TheNodes
@@ -248,6 +269,7 @@ methodmap TheNodes
         for(int i = 0; i < MAX_NODES; i++)
         {
             g_bNodeUsed[i] = false;
+            g_bNodeTaken[i] = false;
             g_iNodeHint[i] = 0;
             g_iNodeTeam[i] = 0;
             VectorCopy(NULL_VECTOR, g_NodeOrigin[i]);
@@ -338,6 +360,171 @@ methodmap TheNodes
         }
 
         return CNode(best);
+    }
+
+    // Gets the nearest node to the given origin.
+    // @param origin            Search origin vector.
+    // @param hint              Node type to search.
+    // @param available_only    If set to **true**, nodes currently being used by bots are ignored.
+    // @param maxdistance       Maximum search distance (squared).
+    // @return                  Nearest node found or invalid node if none. Use IsValid() to check.
+    public static CNode GetNearestNodeOfType(const float origin[3], const NodeHint hint = NodeHint_Unknown, const bool available_only = true, const float maxdistance = 25000.0)
+    {
+        int best = INVALID_NODE_ID;
+        float dest[3];
+        float smallest = maxdistance * 2.0, distance;
+
+        for(int i = 0; i < MAX_NODES; i++)
+        {
+            CNode node = CNode(i);
+
+            if (node.IsFree())
+                continue;
+
+            if (!node.IsOfType(hint))
+                continue;
+
+            if (available_only && !node.IsAvailable())
+                continue;
+
+            node.GetOrigin(dest);
+            distance = GetVectorDistance(origin, dest, true);
+
+            if (distance > maxdistance)
+                continue;
+
+            if (distance < smallest)
+            {
+                smallest = distance;
+                best = i;
+            }
+        }
+
+        return CNode(best);
+    }
+
+    // Gets a random node within a maximum and minimum distance.
+    // @param origin            Search origin vector.
+    // @param hint              Node type to search.
+    // @param available_only    If set to **true**, nodes currently being used by bots are ignored.
+    // @param mindistance       Minimum search distance (squared).
+    // @param maxdistance       Maximum search distance (squared).
+    // @return                  Random node within a given max distance.
+    public static CNode GetRandomNode(const float origin[3], const NodeHint hint = NodeHint_DontCare, const bool available_only = true, const float mindistance = 0.0, const float maxdistance = 25000000.0)
+    {
+        int best = INVALID_NODE_ID;
+        float dest[3];
+        float distance;
+        int num_nodes = 0;
+        int found[MAX_NODES];
+
+        for(int i = 0; i < MAX_NODES; i++)
+        {
+            CNode node = CNode(i);
+
+            if (node.IsFree())
+                continue;
+
+            if (hint != NodeHint_DontCare && !node.IsOfType(hint))
+                continue;
+
+            if (available_only && !node.IsAvailable())
+                continue;
+
+            node.GetOrigin(dest);
+            distance = GetVectorDistance(origin, dest, true);
+
+            if (distance < mindistance)
+                continue;
+
+            if (distance > maxdistance)
+                continue;
+
+            found[num_nodes] = i;
+            num_nodes++;
+        }
+
+        if (num_nodes <= 0)
+        {
+            return CNode(INVALID_NODE_ID);
+        }
+
+        best = found[Math_GetRandomInt(0, num_nodes - 1)];
+
+        return CNode(best);
+    }
+
+    // Collects all nodes visible to the given position
+    // @param origin            Position to test visibility
+    // @param hint              Hint to search for or `NodeHint_DontCare` to ignore hints
+    // @param visible_nodes     Array to store visible nodes at
+    // @param num_visible       Number of visible nodes collected
+    // @return                  **TRUE** if at least one visible node, false otherwise.
+    public static bool CollectVisibleNodes(const float origin[3], const NodeHint hint = NodeHint_DontCare, int visible_nodes[MAX_NODES], int &num_visible)
+    {
+        float dest[3];
+        num_visible = 0;
+
+        for(int i = 0; i < MAX_NODES; i++)
+        {
+            CNode node = CNode(i);
+
+            if (node.IsFree())
+                continue;
+
+            if (hint != NodeHint_DontCare && !node.IsOfType(hint))
+                continue;
+
+            node.GetMiddlePoint(dest);
+
+            if (!UTIL_QuickSimpleTraceLine(origin, dest, MASK_VISIBLE|CONTENTS_WINDOW|CONTENTS_GRATE))
+            {
+                visible_nodes[num_visible] = i;
+                num_visible++;
+            }
+        }
+
+        if (num_visible > 0)
+            return true;
+
+        return false;
+    }
+
+    // Collects all nodes visible to the origin node.
+    // @note This uses the node visibility table.
+    // @param origin            Origin node.
+    // @param hint              Hint to search for or `NodeHint_DontCare` to ignore hints.
+    // @param visible_nodes     Array to store visible nodes at.
+    // @param num_visible       Number of visible nodes collected.
+    // @return                  **TRUE** if at least one visible node, false otherwise.
+    public static bool CollectVisibleNodesEx(const CNode origin, const NodeHint hint = NodeHint_DontCare, int visible_nodes[MAX_NODES], int &num_visible)
+    {
+        num_visible = 0;
+
+        for(int i = 0; i < MAX_NODES; i++)
+        {
+            CNode node = CNode(i);
+
+            if (node.IsFree())
+                continue;
+
+            if (hint != NodeHint_DontCare && !node.IsOfType(hint))
+                continue;
+
+            if (origin.index == i)
+                continue;
+
+            if (TheNodes.IsVisible(origin, node))
+            {
+                visible_nodes[num_visible] = i;
+                num_visible++;
+            }
+        }
+
+        if (num_visible > 0)
+            return true;
+
+        return false;
     }
 
     // Gets the current editor
@@ -900,6 +1087,10 @@ methodmap TheNodes
         }
     }
 
+    // Checks if a node can see another node using the visibility table
+    // @param node1     First Node
+    // @param node2     Second Node
+    // @return          **TRUE** if second node is visible to first node
     public static bool IsVisible(CNode node1, CNode node2)
     {
         return g_NodeVisibilityTable[node1.index][node2.index];

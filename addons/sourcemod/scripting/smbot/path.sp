@@ -63,7 +63,7 @@ float SMBotPathCost(INextBot bot, CNavArea area, CNavArea fromArea, CNavLadder l
 
     if (ladder != NULL_LADDER_AREA)
     {
-        dist = ladder.length;
+        dist = ladder.Length;
     }
     else if (length > 0.0)
     {

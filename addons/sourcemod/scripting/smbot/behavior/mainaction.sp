@@ -50,6 +50,13 @@ static NextBotAction InitialContainedAction(NextBotAction action, CBaseCombatCha
 
 static int OnStart(SMBotMainAction action, SMBot actor, NextBotAction prevAction)
 {
+    if (!IsFakeClient(actor.index))
+    {
+        return action.Done("Don't run on humans!");
+    }
+
+    PrintToServer("Starting SMBot Main Action");
+
     return action.Continue();
 }
 

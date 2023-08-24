@@ -3,10 +3,13 @@
 Handle g_hlookupbone;
 Handle g_hgetboneposition;
 Handle g_hsnapeyeangles;
-Handle g_hweaponswitch;
+// Handle g_hweaponswitch;
 Handle g_hclientsettingsupdated;
 Handle g_hfindentitybyname;
 Handle g_hfindentityinsphere;
+// Handle g_hcreateentitybyname;
+// Handle g_hctfplayercreateplayer;
+Handle g_hctfbotupdatelooking;
 int g_offset_hmatchingteleporter;
 int g_offset_percentinvisible;
 
@@ -71,16 +74,16 @@ void SetupSDKCalls(GameData gamedata)
     }
 
     // bool CTFPlayer::Weapon_Switch( CBaseCombatWeapon *pWeapon, int viewmodelindex )
-    StartPrepSDKCall(SDKCall_Player);
-    PrepSDKCall_SetFromConf(gamedata, SDKConf_Virtual, "CTFPlayer::Weapon_Switch");
-    PrepSDKCall_AddParameter(SDKType_CBaseEntity, SDKPass_Pointer);
-    PrepSDKCall_AddParameter(SDKType_PlainOldData, SDKPass_Plain);
-    PrepSDKCall_SetReturnInfo(SDKType_Bool, SDKPass_Plain);
-    if ((g_hweaponswitch = EndPrepSDKCall()) == null)
-    {
-        LogError("Failed to setup SDKCall for bool CTFPlayer::Weapon_Switch( CBaseCombatWeapon *pWeapon, int viewmodelindex )");
-        fail = true;
-    }
+    // StartPrepSDKCall(SDKCall_Player);
+    // PrepSDKCall_SetFromConf(gamedata, SDKConf_Virtual, "CTFPlayer::Weapon_Switch");
+    // PrepSDKCall_AddParameter(SDKType_CBaseEntity, SDKPass_Pointer);
+    // PrepSDKCall_AddParameter(SDKType_PlainOldData, SDKPass_Plain);
+    // PrepSDKCall_SetReturnInfo(SDKType_Bool, SDKPass_Plain);
+    // if ((g_hweaponswitch = EndPrepSDKCall()) == null)
+    // {
+    //     LogError("Failed to setup SDKCall for bool CTFPlayer::Weapon_Switch( CBaseCombatWeapon *pWeapon, int viewmodelindex )");
+    //     fail = true;
+    // }
 
     // void CTFGameRules::ClientSettingsChanged( CBasePlayer *pPlayer )
     StartPrepSDKCall(SDKCall_GameRules);
@@ -119,6 +122,37 @@ void SetupSDKCalls(GameData gamedata)
     if ((g_hfindentityinsphere = EndPrepSDKCall()) == null)
     {
         LogError("Failed to setup SDKCall for void CGlobalEntityList::FindEntityInSphere");
+        fail = true;
+    }
+
+    // StartPrepSDKCall(SDKCall_Static);
+    // PrepSDKCall_SetFromConf(gamedata, SDKConf_Signature, "CreateEntityByName");
+    // PrepSDKCall_AddParameter(SDKType_String, SDKPass_Pointer);
+    // PrepSDKCall_AddParameter(SDKType_PlainOldData, SDKPass_ByValue);
+    // PrepSDKCall_SetReturnInfo(SDKType_CBaseEntity, SDKPass_Pointer);
+    // if((g_hcreateentitybyname = EndPrepSDKCall()) == null)
+    // {
+    //     LogError("Failed to setup SDKCall for CreateEntityByName!");
+    //     fail = true;
+    // }
+
+    // StartPrepSDKCall(SDKCall_Static);
+    // PrepSDKCall_SetFromConf(gamedata, SDKConf_Signature, "CTFPlayer::CreatePlayer");
+    // PrepSDKCall_AddParameter(SDKType_String, SDKPass_Pointer);
+    // PrepSDKCall_AddParameter(SDKType_Edict, SDKPass_Pointer);
+    // PrepSDKCall_SetReturnInfo(SDKType_CBasePlayer, SDKPass_Pointer, VDECODE_FLAG_ALLOWNULL|VDECODE_FLAG_ALLOWNOTINGAME);
+    // if ((g_hctfplayercreateplayer = EndPrepSDKCall()) == null)
+    // {
+    //     LogError("Failed to setup SDKCall for CTFPlayer::CreatePlayer!");
+    //     fail = true;
+    // }
+
+    StartPrepSDKCall(SDKCall_Player);
+    PrepSDKCall_SetFromConf(gamedata, SDKConf_Signature, "CTFBot::UpdateLookingAroundForIncomingPlayers");
+    PrepSDKCall_AddParameter(SDKType_Bool, SDKPass_ByValue);
+    if ((g_hctfbotupdatelooking = EndPrepSDKCall()) == null)
+    {
+        LogError("Failed to setup SDKCall for CTFBot::UpdateLookingAroundForIncomingPlayers!");
         fail = true;
     }
 
@@ -179,10 +213,10 @@ void SnapEyeAngles(int player, float angles[3])
  * @param viewmodelindex     ???
  * @return                   true is switch suceeded
  */
-bool Weapon_Switch(int player, int weapon, int viewmodelindex = 0)
-{
-    return SDKCall(g_hweaponswitch, player, weapon, viewmodelindex);
-}
+// bool Weapon_Switch(int player, int weapon, int viewmodelindex = 0)
+// {
+//     return SDKCall(g_hweaponswitch, player, weapon, viewmodelindex);
+// }
 
 /**
  * Informs that the client settings has changed
@@ -221,3 +255,13 @@ methodmap CGlobalEntityList
         return SDKCall(g_hfindentityinsphere, startentity, vector, radius, 0);
     }
 }
+
+// int CreateEntityByNameEx(const char[] classname, int forcedindex = -1)
+// {
+//     return SDKCall(g_hcreateentitybyname, classname, forcedindex);
+// }
+
+// int CreatePlayer(const char[] classname, int edict)
+// {
+//     return SDKCall(g_hctfplayercreateplayer, classname, edict);
+// }

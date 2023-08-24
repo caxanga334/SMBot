@@ -38,14 +38,15 @@ float g_flIgnoreEnemiesTime[TF_MAXPLAYERS];
 int g_iVisionSearchLastIndex[TF_MAXPLAYERS];
 float g_flNextChangeClassTime[TF_MAXPLAYERS];
 Path g_hCurrentPath[TF_MAXPLAYERS];
+int g_iCurrentUsedNode[TF_MAXPLAYERS];
 int g_hMySentryGun[TF_MAXPLAYERS];
 int g_hMyDispenser[TF_MAXPLAYERS];
 int g_hMyTeleEntrance[TF_MAXPLAYERS];
 int g_hMyTeleExit[TF_MAXPLAYERS];
 CNavArea g_HomeArea[TF_MAXPLAYERS];
 
-float g_flHoldButtonTime[TF_MAXPLAYERS][MAX_BUTTONS];
-bool g_bTapButton[TF_MAXPLAYERS][MAX_BUTTONS];
+int g_iBotButtonsBits[TF_MAXPLAYERS];
+CountdownTimer g_ButtonTimers[TF_MAXPLAYERS][MAX_BUTTONS];
 
 // client globals
 bool g_bClientDebugging[TF_MAXPLAYERS];
@@ -54,17 +55,17 @@ float g_flDebugHudTimer[TF_MAXPLAYERS];
 /* Enum of buttons the bot can press, the button ID must match the IN_* buttons from entity_prop_stocks.inc */
 enum BotButtons
 {
-    ATTACK = 0,
-    JUMP,
-    DUCK,
-    FORWARD,
-    BACK,
-    USE,
-    MOVELEFT = 9,
-    MOVERIGHT,
-    ATTACK2,
-    RELOAD,
-    ATTACK3 = 25,
+    BOTBUTTON_ATTACK = 0,
+    BOTBUTTON_JUMP,
+    BOTBUTTON_DUCK,
+    BOTBUTTON_FORWARD,
+    BOTBUTTON_BACK,
+    BOTBUTTON_USE,
+    BOTBUTTON_MOVELEFT = 9,
+    BOTBUTTON_MOVERIGHT,
+    BOTBUTTON_ATTACK2,
+    BOTBUTTON_RELOAD,
+    BOTBUTTON_ATTACK3 = 25,
 
     MAX_BUTTONS = 26
 }
@@ -184,7 +185,7 @@ methodmap CTFPlayer < CBaseCombatCharacter
 
     public bool WeaponSwitch(int weapon)
     {
-        Weapon_Switch(this.index, weapon);
+        TF2Util_SetPlayerActiveWeapon(this.index, weapon);
     }
 
     public bool IsAlive()
@@ -237,9 +238,21 @@ methodmap CTFPlayer < CBaseCombatCharacter
         return this.GetProp(Prop_Send, "m_iAmmo", .element = type);
     }
 
+    // Gets the bot active weapon
     public CTFWeaponBase GetActiveWeapon()
     {
         return CTFWeaponBase(this.GetPropEnt(Prop_Send, "m_hActiveWeapon"));
+    }
+
+    // Gets the bot weapon at a specific slot
+    public CTFWeaponBase GetWeaponOfSlot(int slot)
+    {
+        return CTFWeaponBase(TF2Util_GetPlayerLoadoutEntity(this.index, slot, true));
+    }
+
+    public bool IsDisguised()
+    {
+        return TF2_IsPlayerInCondition(this.index, TFCond_Disguised);
     }
 
     public TFTeam GetDisguiseTeam()
@@ -315,23 +328,46 @@ methodmap NextBotPlayer < CTFPlayer
         return view_as<PlayerBody>(this.MyNextBotPointer().GetBodyInterface());
     }
 
-    public void ClearButtons()
+    public void ReleaseAllButtons()
     {
         for(int bt = 0; bt < view_as<int>(MAX_BUTTONS); bt++)
         {
-            g_bTapButton[this.index][bt] = false;
-            g_flHoldButtonTime[this.index][bt] = 0.0;
+            g_ButtonTimers[this.index][bt].Invalidate();
         }
+
+        g_iBotButtonsBits[this.index] = 0;
     }
 
-    public void TapButton(BotButtons button)
+    public void PressButton(BotButtons button, float duration = -1.0)
     {
-        g_bTapButton[this.index][view_as<int>(button)] = true;
+        g_iBotButtonsBits[this.index] |= (1 << view_as<int>(button));
+        g_ButtonTimers[this.index][view_as<int>(button)].Start(duration);
     }
 
-    public void HoldButton(BotButtons button, float holdtime)
+    public void ReleaseButton(BotButtons button)
     {
-        g_flHoldButtonTime[this.index][view_as<int>(button)] = GetGameTime() + holdtime;
+        g_iBotButtonsBits[this.index] &= ~(1 << view_as<int>(button));
+        g_ButtonTimers[this.index][view_as<int>(button)].Invalidate();
+    }
+
+    public void ProcessButtons(int &buttons, bool &changed)
+    {
+        if (g_iBotButtonsBits[this.index] != 0)
+        {
+            changed = true;
+        }
+
+        buttons = g_iBotButtonsBits[this.index]; // copy first
+        g_iBotButtonsBits[this.index] = 0; // clear
+
+        for(int buttonIndex = 0; buttonIndex < view_as<int>(MAX_BUTTONS); buttonIndex++)
+        {
+            if (!g_ButtonTimers[this.index][buttonIndex].IsElapsed())
+            {
+                buttons |= (1 << buttonIndex);
+                changed = true;
+            }
+        }
     }
 }
 
@@ -359,12 +395,21 @@ methodmap SMBot < NextBotPlayer
         InitBehavior();
 
         // Hijack TF2's default bot.
-        EntityFactory = new CEntityFactory("tf_bot", OnCreate, OnRemove);
+        EntityFactory = new CEntityFactory("sm_bot", OnCreate, OnRemove);
         EntityFactory.DeriveFromClass("tf_bot");
+        EntityFactory.AttachNextBot(ToolsNextBotPlayer_Factory)
         EntityFactory.SetInitialActionFactory(SMBotMainAction.GetFactory());
         EntityFactory.BeginDataMapDesc();
         EntityFactory.EndDataMapDesc();
         EntityFactory.Install();
+    }
+
+    public static void AllocateSMBotPlayer()
+    {
+        char name[MAX_NAME_LENGTH];
+        // Until a name list is added
+        FormatEx(name, sizeof(name), "SMBot %i", GetRandomInt(0, 9999));
+        CreateFakeClient(name);
     }
 
     public TFBotDifficulty GetDifficulty()
@@ -587,6 +632,32 @@ methodmap SMBot < NextBotPlayer
         }
     }
 
+    // The hint node the bot is currently using
+    property int hintnode
+    {
+        public get()
+        {
+            return g_iCurrentUsedNode[this.index];
+        }
+        public set(int value)
+        {
+            g_iCurrentUsedNode[this.index] = value;
+        }
+    }
+
+    // Clears the hint node this bot was using and marks it as available for other bots.
+    public void ClearHintNode()
+    {
+        CNode node = CNode(this.hintnode);
+
+        if (node.IsValid())
+        {
+            node.ChangeAvailableStatus(false);
+        }
+
+        this.hintnode = INVALID_NODE_ID;
+    }
+
     // Stores the bot current path via sourcemod globals
     // @note Mostly used for debugging
     public void SetCurrentPath(const Path path)
@@ -604,6 +675,9 @@ methodmap SMBot < NextBotPlayer
         g_hCurrentPath[this.index] = view_as<Path>(0);
     }
 
+    // Checks if the given entity is this bot enemy
+    // @param other     Entity index to check
+    // @return          True if enemy
     public bool MyIsEnemy(int other)
     {
         TFTeam theirteam;
@@ -637,6 +711,24 @@ methodmap SMBot < NextBotPlayer
             theirteam = view_as<TFTeam>(GetEntProp(other, Prop_Send, "m_iTeamNum"));
 
             if (theirteam != this.GetTeam())
+                return true;
+        }
+
+        return false;
+    }
+
+    // Checks if the given entity is an ally
+    // @param other     Entity index to check
+    // @return          True if ally
+    public bool IsAlly(int other)
+    {
+        TFTeam theirteam;
+
+        if (HasEntProp(other, Prop_Send, "m_iTeamNum"))
+        {
+            theirteam = view_as<TFTeam>(GetEntProp(other, Prop_Send, "m_iTeamNum"));
+
+            if (theirteam == this.GetTeam())
                 return true;
         }
 
@@ -865,6 +957,9 @@ methodmap SMBot < NextBotPlayer
     // @param duration      How long to ignore enemies for  
     public void IgnoreEnemies(float duration = 0.5)
     {
+        if (duration <= 0.0)
+            g_flIgnoreEnemiesTime[this.index] = -1.0;
+
         g_flIgnoreEnemiesTime[this.index] = GetGameTime() + duration;
     }
 
@@ -932,7 +1027,7 @@ methodmap SMBot < NextBotPlayer
 
         if (myWeapon.GetPrimaryClip() <= 0)
         {
-            this.HoldButton(RELOAD, 0.250);
+            this.PressButton(BOTBUTTON_RELOAD);
             return;
         }
 
@@ -941,7 +1036,7 @@ methodmap SMBot < NextBotPlayer
             const float spinTime = 3.0;
             if (vision.GetTimeSinceVisible(view_as<int>(this.GetOpposingTeam())) < spinTime)
             {
-                this.HoldButton(ATTACK2, 0.5);
+                this.PressButton(BOTBUTTON_ATTACK2, 0.5);
             }
         }
 
@@ -978,8 +1073,13 @@ methodmap SMBot < NextBotPlayer
         if (UTIL_QuickSimpleTraceLine(myEyes, finalAimVector, MASK_SHOT))
             return;
 
-        this.HoldButton(ATTACK, 0.200);
+        this.PressButton(BOTBUTTON_ATTACK, 0.2);
         return;
+    }
+
+    public void UpdateLookingAroundForIncomingPlayers(bool lookforenemies)
+    {
+        SDKCall(g_hctfbotupdatelooking, this.index, lookforenemies);
     }
 
     public bool IsAmmoLow()
@@ -1077,18 +1177,23 @@ methodmap SMBot < NextBotPlayer
 
 static void OnCreate(SMBot ent)
 {
-    g_smbot[ent.index] = true;
-    LogMessage("Hijacked TFBot %i", ent.index);
-
-    SDKHook(ent.index, SDKHook_SpawnPost, OnSpawnPost);
-    SDKHook(ent.index, SDKHook_ThinkPost, OnThinkPost);
+    if (ent.index > 0)
+    {
+        g_smbot[ent.index] = true;
+        SDKHook(ent.index, SDKHook_SpawnPost, OnSpawnPost);
+        SDKHook(ent.index, SDKHook_ThinkPost, OnThinkPost);
+        LogMessage("SMBot entity #%i created.", ent.index);
+    }
 }
 
 static void OnRemove(SMBot ent)
 {
-    g_smbot[ent.index] = false;
-    SDKUnhook(ent.index, SDKHook_SpawnPost, OnSpawnPost);
-    SDKUnhook(ent.index, SDKHook_ThinkPost, OnThinkPost);
+    if (ent.index > 0)
+    {
+        g_smbot[ent.index] = false;
+        SDKUnhook(ent.index, SDKHook_SpawnPost, OnSpawnPost);
+        SDKUnhook(ent.index, SDKHook_ThinkPost, OnThinkPost);
+    }
 }
 
 static void OnSpawnPost(int entity)
@@ -1106,7 +1211,16 @@ static void OnSpawnPost(int entity)
 static void OnThinkPost(int entity)
 {
     SMBot bot = SMBot(entity);
+
+    if (!IsFakeClient(entity))
+    {
+        g_smbot[entity] = false;
+        SDKUnhook(entity, SDKHook_ThinkPost, OnThinkPost);
+        return;
+    }
+
     bot.UpdateVisiblePlayers();
+    bot.UpdateVision();
 }
 
 Action Timer_OnSpawnPost(Handle timer, any data)

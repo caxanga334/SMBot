@@ -10,7 +10,7 @@
 | Payload  | Not Implemented  | N/a |
 | Payload Race  | Not Implemented  | N/a |
 | King of The Hill  | Not Implemented  | N/a |
-| Mann vs Machine  | Not Supported | Breaks the blu robots AI. **DO NOT USE**. |
+| Mann vs Machine  | Not Implemented | Experimental support for the coexistence of both SMBots and TFBots |
 | Mannpower  | Not Implemented  | N/a |
 | PASS Time  | Not Implemented  | N/a |
 | Robot Destruction  | Not Implemented  | N/a |
