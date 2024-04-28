@@ -116,6 +116,13 @@ float SMBotPathCost(INextBot bot, CNavArea area, CNavArea fromArea, CNavLadder l
         {
             dist *= 5.0;
         }
+
+        float danger = CSMBotNavData.GetDanger((GetClientTeam(smbot.index) - 2), area.GetID())
+
+        if (danger > 1.0)
+        {
+            dist *= danger;
+        }
     }
 
     float cost = dist;

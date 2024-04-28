@@ -4,7 +4,7 @@
 #include "findhealth.sp"
 #include "findammo.sp"
 #include "deadaction.sp"
-#include "senario/capturetheflag.sp"
+#include "senario/ctf/capturetheflag.sp"
 
 static NextBotActionFactory ActionFactory;
 
@@ -230,23 +230,18 @@ static void SelectTargetPoint(NextBotAction action, INextBot bot, CBaseCombatCha
                 if (CTFPlayer.IsPlayerEntity(target))
                 {
                     CTFPlayer TFPlayer = CTFPlayer(target);
-                    int headBone = TFPlayer.LookUpBone("bip_head");
                     float desiredAimSpot[3];
-                    float boneAngle[3];
+                    GetClientEyePosition(TFPlayer.index, desiredAimSpot);
+                    desiredAimSpot[2] -= 1.0;
 
                     switch(me.GetDifficulty())
                     {
                         case Expert, Hard:
                         {
-                            if (headBone >= 0)
+                            if (vision.IsAbleToSee(desiredAimSpot, DISREGARD_FOV))
                             {
-                                TFPlayer.GetBonePosition(headBone, desiredAimSpot, boneAngle);
-
-                                if (vision.IsAbleToSee(desiredAimSpot, DISREGARD_FOV))
-                                {
-                                    VectorCopy(desiredAimSpot, pos);
-                                    return;
-                                }
+                                VectorCopy(desiredAimSpot, pos);
+                                return;
                             }
                         }
                     }
@@ -286,6 +281,26 @@ static CKnownEntity SelectMoreDangerousThreat(NextBotAction action, INextBot bot
     if (bot.GetRangeSquaredTo(threat1.GetEntity()) < bot.GetRangeSquaredTo(threat2.GetEntity()))
     {
         return threat1;
+    }
+
+    if (CTFPlayer.IsPlayerEntity(threat1.GetEntity()))
+    {
+        CTFPlayer player1 = CTFPlayer(threat1.GetEntity())
+
+        if (player1.IsInCondition(TFCond_Ubercharged) || player1.IsInCondition(TFCond_UberchargedCanteen))
+        {
+            return threat2;
+        }
+    }
+
+    if (CTFPlayer.IsPlayerEntity(threat2.GetEntity()))
+    {
+        CTFPlayer player2 = CTFPlayer(threat2.GetEntity())
+
+        if (player2.IsInCondition(TFCond_Ubercharged) || player2.IsInCondition(TFCond_UberchargedCanteen))
+        {
+            return threat1;
+        }
     }
 
     return threat2;

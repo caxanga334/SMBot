@@ -437,25 +437,17 @@ methodmap SMBot < NextBotPlayer
         
         this.nextchangeclasstime = Math_GetRandomFloat(120.0, 360.0);
 
-        if (GetURandomFloat() > 0.5)
+        if (CTFGameRules.IsPlayingMannVsMachine())
         {
-            return TFClass_Scout;
-        }
-        else if (GetURandomFloat() > 0.5)
-        {
-            return TFClass_Soldier;
-        }
-        else if (GetURandomFloat() > 0.5)
-        {
-            return TFClass_Pyro;
-        }
-        else if (GetURandomFloat() > 0.5)
-        {
-            return TFClass_DemoMan;
+            g_mvmclassroster.SetTargetClient(this.index);
+            g_mvmclassroster.Compute();
+            return g_mvmclassroster.SelectClass();
         }
         else
         {
-            return TFClass_Heavy;
+            g_defaultclassroster.SetTargetClient(this.index);
+            g_defaultclassroster.Compute();
+            return g_defaultclassroster.SelectClass();
         }
     }
 
@@ -878,6 +870,28 @@ methodmap SMBot < NextBotPlayer
         g_iVisionSearchLastIndex[this.index] += sm_smbot_vis_search_increment.IntValue;
     }
 
+    public void SelectBestWeaponForThreat(CBaseCombatCharacter threat)
+    {
+        INextBot me = this.MyNextBotPointer();
+        float range = me.GetRangeTo(threat.index);
+        CTFWeaponBase myWeapon = this.GetActiveWeapon();
+
+        if (myWeapon.GetWeaponID() == TF_WEAPON_FLAMETHROWER ||
+        myWeapon.GetWeaponID() == TF_WEAPON_FLAMETHROWER_ROCKET ||
+        myWeapon.GetWeaponID() == TF_WEAPON_ROCKETLAUNCHER)
+        {
+            if (range < 400.0)
+            {
+                int secondary = TF2Util_GetPlayerLoadoutEntity(this.index, TFWeaponSlot_Secondary, true);
+
+                if (secondary != -1)
+                {
+                    this.WeaponSwitch(secondary);
+                }
+            }
+        }
+    }
+
     public void ResetDecoratedDebugString()
     {
         strcopy(g_szBehaviorDebug[this.index], sizeof(g_szBehaviorDebug[]), "");
@@ -995,6 +1009,10 @@ methodmap SMBot < NextBotPlayer
             }
 
             return;
+        }
+        else
+        {
+            this.UpdateLookingAroundForIncomingPlayers(true);
         }
     }
 
@@ -1204,6 +1222,18 @@ static void OnSpawnPost(int entity)
     int difficulty = tf_bot_difficulty.IntValue;
     difficulty = Math_Clamp(difficulty, 0, 3);
     g_difficulty[entity] = view_as<TFBotDifficulty>(difficulty);
+
+    if (difficulty == 3)
+    {
+        INextBot nb = bot.MyNextBotPointer();
+        IVision vision = nb.GetVisionInterface();
+        vision.SetFieldOfView(150.0);
+    }
+
+    if (bot.GetTeam() <= TFTeam_Spectator)
+    {
+        FakeClientCommand(entity, "jointeam auto");
+    }
 
     CreateTimer(0.5, Timer_OnSpawnPost, GetClientSerial(entity), TIMER_FLAG_NO_MAPCHANGE);
 }

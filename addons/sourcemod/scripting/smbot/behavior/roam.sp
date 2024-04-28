@@ -76,7 +76,7 @@ static int OnStart(RoamAction action, SMBot actor, NextBotAction prevAction)
 
     do
     {
-        spot = TheHidingSpots.Get(Math_GetRandomInt(0, TheHidingSpots.Length - 1));
+        spot = TheHidingSpots.Get(Math_GetRandomInt(0, TheHidingSpots.Count - 1));
     }
     while(spot == NULL_HIDING_SPOT)
 
@@ -117,11 +117,9 @@ static int Update(RoamAction action, SMBot actor, float interval)
     PathFollower path = action.path;
     actor.SetCurrentPath(path);
     float goal[3];
-    float endpos[3];
-    path.GetEndPosition(endpos);
     action.GetGoalVector(goal);
 
-    if (bot.GetRangeToEx(goal) <= 128.0 || bot.GetRangeSquaredToEx(endpos) <= 128.0)
+    if (bot.GetRangeToEx(goal) <= 64.0)
     {
         return action.Done("Goal reached!");
     }

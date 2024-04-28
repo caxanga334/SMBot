@@ -3,6 +3,10 @@ void SetupGameEvents()
 {
     HookEvent("teamplay_flag_event", Event_FlagEvent);
     HookEvent("teamplay_setup_finished", Event_SetupTimeFinished);
+    /* Events to reset the nav data values */
+    HookEvent("teamplay_round_start", NavDataEvent_OnRoundRestart);
+    HookEvent("arena_round_start", NavDataEvent_OnRoundRestart);
+    HookEvent("mvm_wave_complete", NavDataEvent_OnRoundRestart);
 }
 
 void Event_FlagEvent(Event event, const char[] name, bool dontBroadcast)

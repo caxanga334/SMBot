@@ -71,7 +71,8 @@ methodmap PlayerBody < IBody
 
         //PrintVectorToServer("Eye Angles", eyeangles);
 
-        SnapEyeAngles(index, eyeangles);
+        // SnapEyeAngles(index, eyeangles);
+        VScript_SnapPlayerAngles(index, eyeangles);
     }
 
     // Makes the bot aim towards a target vector
@@ -99,6 +100,16 @@ methodmap PlayerBody < IBody
             }
 
             return true;
+        }
+        else
+        {
+            if (g_iDebugBotTarget == index)
+            {
+                if (priority < this.GetCurrentPriority())
+                {
+                    PrintToConsoleAll("%N(#%i) Aim Towards (%.2f %.2f %.2f) rejected by priority!", index, index, target[0], target[1], target[2]);
+                }
+            }
         }
 
         return false;

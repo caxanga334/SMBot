@@ -13,17 +13,12 @@ enum NodeHint
     NodeHint_DontCare = -2,             // Don't Care. Used when searching nodes.
     NodeHint_Unknown = -1,              // Unknown hint type.
     NodeHint_None = 0,                  // No hint.
-    NodeHint_Sniper,                    // Sniper aiming spot.
+    NodeHint_Sniper,                    // Snipers should camp here.
     NodeHint_SentryGun,                 // Engineers should build a sentry gun here.
     NodeHint_Dispenser,                 // Engineers should build a dispenser here.
     NodeHint_TeleporterExit,            // Engineers should build a teleporter exit here.
     NodeHint_TeleporterEntrance,        // Engineers should build a teleporter entrance here.
-    NodeHint_Deathmatch,                // Deathmatch hint. Used by free roaming bots.
-    NodeHint_Approuch,                  // Location where bots will expect enemies to appear from.
-    NodeHint_Exposed,                   // The area around this node is exposed/open, bots prefering a safer path will avoid.
-    NodeHint_Flank,                     // Marks nearby area as an alternative route to be used by flanking bots.
-    NodeHint_Avoid,                     // Marks nearby area to be avoided by bots.
-    NodeHint_Prefer,                    // Marks nearby area to be preferred by bots.
+    NodeHint_Deathmatch,                // Deathmatch roaming hint.
 
     NodeHint_MaxHintType                // Maximum number of hints available.
 }
@@ -35,12 +30,7 @@ int g_iNodeHintColor[view_as<int>(NodeHint_MaxHintType)][4] = {
     { 0, 0, 255, 255 }, // Dispenser 
     { 255, 165, 0, 255 }, // Tele Exit 
     { 165, 42, 42, 255 }, // Tele Entrance 
-    { 255, 105, 180, 255 }, // Deathmatch
-    { 255, 0, 255, 255 }, // Approuch
-    { 200, 100, 100, 255 }, // Exposed
-    { 60, 220, 190, 255 }, // Flank
-    { 200, 0, 160, 255 }, // Avoid
-    { 150, 255, 0, 255 } // Prefer
+    { 255, 105, 180, 255 } // Deathmatch
 }
 
 char g_szNodeHintName[view_as<int>(NodeHint_MaxHintType)][16] = {
@@ -50,12 +40,7 @@ char g_szNodeHintName[view_as<int>(NodeHint_MaxHintType)][16] = {
     "Dispenser",
     "Tele Exit",
     "Tele Entrance",
-    "Deathmatch",
-    "Approuch",
-    "Exposed",
-    "Flank",
-    "Avoid",
-    "Prefer"
+    "Deathmatch"
 }
 
 bool g_bNodeUsed[MAX_NODES]; // True if the node is used
@@ -675,22 +660,8 @@ methodmap TheNodes
 
         for(int i = 0; i < MAX_NODES; i++)
         {
-            //file.WriteInt8(g_bNodeUsed[i] ? 1 : 0);
-            //file.WriteInt8(g_iNodeTeam[i]);
-            //file.WriteInt16(g_iNodeHint[i]);
-
-            for(int y = 0; y < 3; y++)
-            {
-                file.WriteInt16(RoundToNearest(g_NodeOrigin[i][y]));
-
-                // if (g_bNodeUsed[i])
-                //     PrintToServer("i %i y %i --- %i --- %f", i, y, RoundToNearest(g_NodeOrigin[i][y]), g_NodeOrigin[i][y]);
-            }
-
-            for(int y = 0; y < 3; y++)
-            {
-                file.WriteInt16(RoundToNearest(g_flNodeHintVector[i][y]));
-            }
+            file.Write(view_as<int>(g_NodeOrigin[i]), 3, 4);
+            file.Write(view_as<int>(g_flNodeHintVector[i]), 3, 4);
         }
 
         LogMessage("Successfully saved node files for %s", map);
@@ -804,26 +775,8 @@ methodmap TheNodes
 
         for(int i = 0; i < MAX_NODES; i++)
         {
-            //int isused;
-            //file.ReadInt8(isused);
-            //g_bNodeUsed[i] = isused != 0;
-            //file.ReadInt8(g_iNodeTeam[i]);
-            //file.ReadInt16(g_iNodeHint[i]);
-
-            for(int y = 0; y < 3; y++)
-            {
-                int origin;
-                file.ReadInt16(origin);
-                g_NodeOrigin[i][y] = float(origin);
-            }
-
-            for(int y = 0; y < 3; y++)
-            {
-                int origin;
-                file.ReadInt16(origin);
-                g_flNodeHintVector[i][y] = float(origin);
-            }
-
+            file.Read(g_NodeOrigin[i], 3, 4);
+            file.Read(g_flNodeHintVector[i], 3, 4);
         }
 
         g_bHasNodes = true;

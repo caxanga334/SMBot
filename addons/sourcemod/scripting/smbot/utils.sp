@@ -2,6 +2,10 @@
  * SMBot utility functions
  */
 
+/* https://developer.valvesoftware.com/wiki/TFBot_Technicalities#Rosters */
+
+#define MAX_TF_CLASSES 10 // array size to hold data for each class definition
+
 /**
  * Easy print a vector
  * 
@@ -269,5 +273,228 @@ void UTIL_TF2ClassTypeToName(const TFClassType class, char[] buffer, int size)
         case TFClass_Sniper: strcopy(buffer, size, "sniper");
         case TFClass_Spy: strcopy(buffer, size, "spy");
         default: strcopy(buffer, size, "soldier");
+    }
+}
+
+/**
+ * Counts the number of players in each TF class
+ *
+ * @param ignore         (Optional) client index to exclude
+ * @param class_count    Array to store the class count
+ * @param team           (Optional) team filter
+ */
+void UTIL_CountClassCount(const int ignore = -1, int class_count[MAX_TF_CLASSES], const TFTeam team)
+{
+    for(int client = 1; client <= MaxClients; client++)
+    {
+        if (ignore == client)
+            continue;
+
+        if (!IsClientInGame(client))
+            continue;
+
+        if (team != TFTeam_Unassigned && TF2_GetClientTeam(client) != team)
+            continue;
+
+        TFClassType class = TF2_GetPlayerClass(client);
+        class_count[view_as<int>(class)]++;
+    }
+}
+
+enum struct SMBotClassRoster
+{
+    // static data
+    int minTeamSize[MAX_TF_CLASSES]; // min number of players on the team for the class to be selected
+    int playerrate[MAX_TF_CLASSES]; // must have 1 for every N number of players in the team
+    int minimum[MAX_TF_CLASSES]; // must have at least this number in the team
+    int maximum[MAX_TF_CLASSES]; // class count cannot exceed this
+    // data for selection
+    bool available[MAX_TF_CLASSES];
+    int numinclass[MAX_TF_CLASSES];
+    TFTeam team;
+    int client;
+
+    void Init(int minTeamSize[MAX_TF_CLASSES], int playerrate[MAX_TF_CLASSES], int minimum[MAX_TF_CLASSES], int maximum[MAX_TF_CLASSES])
+    {
+        this.minTeamSize = minTeamSize;
+        this.playerrate = playerrate;
+        this.minimum = minimum;
+        this.maximum = maximum;
+    }
+
+    void SetTargetClient(int client)
+    {
+        this.client = client;
+        this.team = TF2_GetClientTeam(client);
+    }
+
+    void Compute()
+    {
+        int numInTeam = GetTeamClientCount(this.client);
+        UTIL_CountClassCount(-1, this.numinclass, this.team);
+
+        for(int cls = 1; cls < MAX_TF_CLASSES; cls++)
+        {
+            if (this.minTeamSize[cls] < numInTeam)
+            {
+                this.available[cls] = false;
+            }
+            else if (this.numinclass[cls] > this.maximum[cls])
+            {
+                this.available[cls] = false;
+            }
+            else
+            {
+                this.available[cls] = true;
+            }
+        }
+    }
+
+    TFClassType SelectClass()
+    {
+        int availableindexes[MAX_TF_CLASSES] = { 0, ... };
+        int maxindex = 0;
+        int numInTeam = GetTeamClientCount(this.client);
+
+        for(int cls = 1; cls < MAX_TF_CLASSES; cls++)
+        {
+            if (this.numinclass[cls] < this.minimum[cls])
+            {
+                return view_as<TFClassType>(cls);
+            }
+
+            if (this.playerrate[cls] > 0)
+            {
+                int minrate = numInTeam/this.playerrate[cls];
+
+                if (this.numinclass[cls] < minrate)
+                {
+                    return view_as<TFClassType>(cls);
+                }
+            }
+
+            availableindexes[maxindex] = cls;
+            maxindex++;
+        }
+
+        return view_as<TFClassType>(availableindexes[GetRandomInt(0, maxindex - 1)]);
+    }
+}
+
+SMBotClassRoster g_defaultclassroster;
+SMBotClassRoster g_mvmclassroster;
+
+void UTIL_SetupClassRosters()
+{
+    // order is undefined (unused), scout, sniper, soldier, demo, medic, heavy, pyro, spy, engineer
+
+    int defaultMinTeamSize[MAX_TF_CLASSES] = { 0, 3, 6, 0, 0, 0, 0, 0, 6, 3 };
+    int defaultPlayerrate[MAX_TF_CLASSES] = { 0, 0, 0, 0, 0, 4, 0, 0, 0, 6 };
+    int defaultMinimum[MAX_TF_CLASSES] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    int defaultMaximum[MAX_TF_CLASSES] = { 0, 0, 3, 0, 0, 0, 3, 0, 2, 2 };
+
+    int mvmMinTeamSize[MAX_TF_CLASSES] = { 0, 3, 3, 0, 0, 0, 0, 0, 3, 0 };
+    int mvmPlayerrate[MAX_TF_CLASSES] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    int mvmMinimum[MAX_TF_CLASSES] = { 0, 0, 1, 0, 0, 1, 0, 0, 0, 1 };
+    int mvmMaximum[MAX_TF_CLASSES] = { 0, 0, 2, 0, 0, 0, 2, 0, 2, 2 };
+
+    g_defaultclassroster.Init(defaultMinTeamSize, defaultPlayerrate, defaultMinimum, defaultMaximum);
+    g_mvmclassroster.Init(mvmMinTeamSize, mvmPlayerrate, mvmMinimum, mvmMaximum);
+}
+
+#define MAX_WEAPONS_DATA 3 // array size of weapons that we care about (prim, sec, melee)
+
+// How the bot identifies a weapon
+enum SMBotWeaponType
+{
+    BotWeaponType_CombatWeapon = 0, // Default type, a weapon that when fired damages enemies
+    BotWeaponType_Healing, // This weapon primary function is healing teammates
+    BotWeaponType_Buff, // This weapon provides a buff for the bot and/or teammates
+    BotWeaponType_Food, // This weapons heal the user when used
+    BotWeaponType_Thrown, // Projectile weapons that can be thrown at enemies
+    BotWeaponType_Cosmetic, // This weapon is cosmetic and doesn't have any function
+
+    BotWeaponType_Max, // Max types
+};
+
+enum struct SMBotWeaponManager
+{
+    bool canbeused[MAX_WEAPONS_DATA]; // can the weapon be used
+    SMBotWeaponType type[MAX_WEAPONS_DATA]; // how the bot identifies this weapon
+    float minrange[MAX_WEAPONS_DATA]; // minimum range
+    float maxrange[MAX_WEAPONS_DATA]; // maximum range
+
+    void ResetWeaponInfo()
+    {
+        for(int weaponIndex = 0; weaponIndex < MAX_WEAPONS_DATA; weaponIndex++)
+        {
+            this.canbeused[weaponIndex] = true;
+            this.type[weaponIndex] = BotWeaponType_CombatWeapon;
+            this.minrange[weaponIndex] = -1.0;
+            this.maxrange[weaponIndex] = -1.0;
+        }
+    }
+
+    void UpdateWeaponInfo(int slot, bool canbeused = true, SMBotWeaponType type = BotWeaponType_CombatWeapon, float minrange = -1.0, float maxrange = -1.0)
+    {
+        this.canbeused[slot] = true;
+        this.type[slot] = type;
+        this.minrange[slot] = minrange;
+        this.maxrange[slot] = maxrange;
+    }
+
+    /**
+     * Given a distance to a threat, select the first best weapon for it
+     * 
+     * @param rangeTO range to the threat
+     * @return slot of the best weapon or -1 if no weapon
+     * @note This performs very basic checks
+     */
+    int SelectBestWeaponForThreat(const float rangeTo)
+    {
+        for(int slot = 0; slot < MAX_WEAPONS_DATA; slot++)
+        {
+            if (this.canbeused[slot] == false)
+                continue;
+
+            if (this.type[slot] != BotWeaponType_CombatWeapon)
+                continue;
+
+            if (this.minrange[slot] >= rangeTo)
+                continue;
+            
+            if (this.maxrange[slot] >= rangeTo)
+                continue;
+            
+            return slot; // always return the first best since we start from the primary slot
+        }
+
+        return -1; // no best weapon
+    }
+
+    int SelectOpportunisticWeapon(const float healthPercent, const bool threat, const float rangeTo)
+    {
+        for(int slot = 0; slot < MAX_WEAPONS_DATA; slot++)
+        {
+            if (this.canbeused[slot] == false)
+                continue;
+
+            // Use self healing weapons when below 50% health and we don't have a visible threat
+            if (this.type[slot] == BotWeaponType_Food && healthPercent >= 0.50 || threat == true)
+                continue;
+
+            // Never use these without a visible threat
+            if ((this.type[slot] == BotWeaponType_Buff || this.type[slot] == BotWeaponType_Thrown) && threat == false)
+
+            if (this.minrange[slot] >= rangeTo)
+                continue;
+            
+            if (this.maxrange[slot] >= rangeTo)
+                continue;
+            
+            return slot; // always return the first best since we start from the primary slot
+        }
+
+        return -1;
     }
 }

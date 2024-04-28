@@ -10,6 +10,7 @@
 #include <cbasenpc/util>
 #include <cbasenpc/tf/nav>
 #include <autoexecconfig>
+#include <vscript>
 
 #include "smbot/sdktimers"
 
@@ -27,9 +28,9 @@
 
 public Plugin myinfo =
 {
-    name = "SourceMod NextBot BOT",
+    name = "[TF2] SMBot",
     author = "caxanga334",
-    description = "BOT for TF2",
+    description = "Player Bot for Team Fortress 2 developed using the NextBot Framework.",
     version = PLUGIN_VERSION,
     url = "https://github.com/caxanga334/SMBot"
 };
@@ -44,8 +45,10 @@ bool g_bSpawningSMBot; // when true, enable our detour on CTFPlayer::CreatePlaye
 float g_flSpawnBotDelay;
 
 #include "smbot/utils.sp"
+#include "smbot/vscript.sp"
 #include "smbot/gameevents.sp"
 #include "smbot/cvars.sp"
+#include "smbot/navdata.sp"
 #include "smbot/detours.sp"
 #include "smbot/sdkcalls.sp"
 #include "smbot/nodes.sp"
@@ -63,6 +66,8 @@ public void OnPluginStart()
     RegAdminCmd("sm_smbot_add_bot", Cmd_AddBot, ADMFLAG_ROOT, "Adds a new bot to the game.");
     RegAdminCmd("sm_smbot_toggle_debug", Cmd_toggledebug, ADMFLAG_ROOT, "Toggles bot debugging information.");
     RegAdminCmd("sm_smbot_set_debug_target", Cmd_setdebugtarget, ADMFLAG_ROOT, "Sets the bot to debug.");
+    RegAdminCmd("sm_smbot_print_bot_actions", Cmd_printbotactions, ADMFLAG_ROOT, "Prints all bot actions.");
+    RegAdminCmd("sm_smbot_vscript_test", Cmd_VscriptTest, ADMFLAG_ROOT, "Generic vscript test command.");
     RegAdminCmd("sm_smbot_test", Cmd_test, ADMFLAG_ROOT, "Generic feature test command.");
     RegAdminCmd("sm_smbot_node_edit", Cmd_nodeedit, ADMFLAG_ROOT, "Toggles node edit mode.");
     RegAdminCmd("sm_smbot_node_save", Cmd_nodesave, ADMFLAG_ROOT, "Saves the current nodes to file.");
@@ -88,6 +93,10 @@ public void OnPluginStart()
     LoadTranslations("common.phrases");
 
     TheNodes.BuildNodeDirectory();
+
+    UTIL_SetupClassRosters();
+
+    CreateTimer(1.0, Timer_NavDataUpdate, _, TIMER_REPEAT);
 }
 
 public void OnAllPluginsLoaded()
@@ -137,6 +146,7 @@ public void OnMapStart()
 
     TheNodes.ClearMapData();
     TheNodes.LoadNodes();
+    CSMBotNavData.OnRoundRestart();
 
     g_flSpawnBotDelay = 0.0;
 }
@@ -391,6 +401,20 @@ Action Cmd_setdebugtarget(int client, int args)
     return Plugin_Handled;
 }
 
+Action Cmd_printbotactions(int client, int args)
+{
+    for(int bot = 1; bot <= MaxClients; bot++)
+    {
+        if (SMBot.IsSMBot(bot))
+        {
+            PrintToChatAll("Action for %N", bot);
+            PrintToChatAll(g_szBehaviorDebug[bot]);
+        }
+    }
+
+    return Plugin_Handled;
+}
+
 Action Cmd_test(int client, int args)
 {
     CClient botclient = CClient(client);
@@ -406,6 +430,19 @@ Action Cmd_test(int client, int args)
 
     PrintToChat(client, "Percent Invisible: %.1f", vis);
     
+    return Plugin_Handled;
+}
+
+Action Cmd_VscriptTest(int client, int args)
+{
+    CClient botclient = CClient(client);
+
+    if (!botclient.IsValid())
+    {
+        ReplyToCommand(client, "This command can only be used in-game!");
+        return Plugin_Handled;
+    }
+
     return Plugin_Handled;
 }
 

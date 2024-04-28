@@ -2,7 +2,7 @@
 
 Handle g_hlookupbone;
 Handle g_hgetboneposition;
-Handle g_hsnapeyeangles;
+// Handle g_hsnapeyeangles;
 // Handle g_hweaponswitch;
 Handle g_hclientsettingsupdated;
 Handle g_hfindentitybyname;
@@ -64,14 +64,14 @@ void SetupSDKCalls(GameData gamedata)
     }
 
     // void CBasePlayer::SnapEyeAngles( const QAngle &viewAngles )
-    StartPrepSDKCall(SDKCall_Player);
-    PrepSDKCall_SetFromConf(gamedata, SDKConf_Signature, "CBasePlayer::SnapEyeAngles");
-    PrepSDKCall_AddParameter(SDKType_QAngle, SDKPass_ByRef);
-    if ((g_hsnapeyeangles = EndPrepSDKCall()) == null)
-    {
-        LogError("Failed to setup SDKCall for void CBasePlayer::SnapEyeAngles( const QAngle &viewAngles )");
-        fail = true;
-    }
+    // StartPrepSDKCall(SDKCall_Player);
+    // PrepSDKCall_SetFromConf(gamedata, SDKConf_Signature, "CBasePlayer::SnapEyeAngles");
+    // PrepSDKCall_AddParameter(SDKType_QAngle, SDKPass_ByRef);
+    // if ((g_hsnapeyeangles = EndPrepSDKCall()) == null)
+    // {
+    //     LogError("Failed to setup SDKCall for void CBasePlayer::SnapEyeAngles( const QAngle &viewAngles )");
+    //     fail = true;
+    // }
 
     // bool CTFPlayer::Weapon_Switch( CBaseCombatWeapon *pWeapon, int viewmodelindex )
     // StartPrepSDKCall(SDKCall_Player);
@@ -200,10 +200,10 @@ void GetBonePosition(int entity, int bone, float origin[3], float angles[3])
  * @param player     Player index
  * @param angles     Angle to set
  */
-void SnapEyeAngles(int player, float angles[3])
-{
-    SDKCall(g_hsnapeyeangles, player, angles);
-}
+// void SnapEyeAngles(int player, float angles[3])
+// {
+//     SDKCall(g_hsnapeyeangles, player, angles);
+// }
 
 /**
  * Switches to the given weapon (providing it has ammo)
